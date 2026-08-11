@@ -1,0 +1,14 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      # Mount the repo into the container so edits on the host show up
+      # immediately, and build artifacts persist between runs.
+      - .:/workspace
+    working_dir: /workspace
+    # Keeps the container alive so you can `docker compose exec` into it
+    # repeatedly, instead of it exiting immediately after CMD runs.
+    tty: true
+    stdin_open: true

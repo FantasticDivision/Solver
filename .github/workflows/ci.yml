@@ -1,0 +1,38 @@
+name: CI
+
+# Runs on every push and every pull request targeting main
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the repo
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Configure the CMake build (Ninja is faster than the default Makefiles)
+      - name: Configure CMake
+        run: >
+          cmake -B ${{ github.workspace }}/build
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      # 3. Build the project (and the test binary, since tests are added
+      #    as a target in CMakeLists.txt)
+      - name: Build
+        run: cmake --build ${{ github.workspace }}/build --config ${{ env.BUILD_TYPE }}
+
+      # 4. Run the Google Test suite via CTest
+      #    --output-on-failure prints the actual gtest output when something fails,
+      #    instead of just "test failed" with no detail.
+      - name: Run tests
+        working-directory: ${{ github.workspace }}/build
+        run: ctest --output-on-failure --build-config ${{ env.BUILD_TYPE }}

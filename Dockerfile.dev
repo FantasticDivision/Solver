@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1
+#
+# Development image — has every dependency needed to build, test, and
+# debug FitSolver. Not used for deployment (see the root Dockerfile
+# for the slim production image); this one is for local dev only.
+
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    git \
+    gdb \
+    ca-certificates \
+    libssl-dev \
+    zlib1g-dev \
+    uuid-dev \
+    libjsoncpp-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+# Nothing is COPY'd here on purpose — the intent is to bind-mount your
+# local source into /workspace at `docker run` time (or via
+# docker-compose.yml / the VS Code dev container below), so edits on
+# your host are immediately visible inside the container and nothing
+# gets baked into the image.
+
+CMD ["bash"]
