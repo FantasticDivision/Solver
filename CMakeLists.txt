@@ -54,6 +54,11 @@ add_library(fitsolver_core
 )
 target_include_directories(fitsolver_core PUBLIC src)
 target_link_libraries(fitsolver_core PUBLIC nlohmann_json)
+# fitsolver_core is linked into fitsolver_lib (SHARED) below, so its object
+# files must be position-independent -- MSVC ignores this, but GCC/Clang
+# refuse to link a non-PIC static lib into a shared one ("recompile with
+# -fPIC").
+set_target_properties(fitsolver_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # --- CLI executable (reads a JSON request from stdin, prints the response)
 add_executable(fitsolver_app src/main.cpp)
