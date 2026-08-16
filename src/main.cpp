@@ -1,5 +1,5 @@
 #include <iostream>
-
+#include "structs.h"
 #include "packer.h"
 
 int main() {
