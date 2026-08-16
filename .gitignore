@@ -23,6 +23,12 @@
 *.dll
 *.so.*
 
+# Python extension modules (built by pybind11, e.g. fitsolver.cp313-win_amd64.pyd)
+*.pyd
+
+# Sample output written by the example scripts
+example/result.json
+
 
 # Fortran module files
 *.mod

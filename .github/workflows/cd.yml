@@ -1,9 +1,15 @@
 name: CD
 
-# Runs only after code lands on main — i.e. after CI has already
-# passed on the PR that got merged. Also allows manual runs.
+# Triggered by the CI workflow finishing on main, NOT independently by
+# push -- so this can only ever run against a commit CI has actually
+# verified. (A plain `push: branches: [main]` trigger would fire in
+# parallel with CI and could publish an image from a commit whose tests
+# hadn't passed yet -- or ever -- if branch protection wasn't configured
+# to prevent it.) Also runnable manually via workflow_dispatch.
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [ "main" ]
   workflow_dispatch:
 
@@ -16,6 +22,9 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # Manual runs always proceed; workflow_run-triggered runs only
+    # proceed if the CI run that triggered this actually passed.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
     # Needed so this workflow is allowed to push to GHCR using the
     # built-in GITHUB_TOKEN (no extra secret required).
@@ -26,6 +35,11 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Build the exact commit CI just verified, not whatever HEAD
+          # happens to be by the time this runs (workflow_dispatch has
+          # no workflow_run event, so fall back to the triggering commit).
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

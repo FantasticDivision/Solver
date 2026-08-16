@@ -3,9 +3,10 @@
 # ---------- Build stage ----------
 FROM ubuntu:24.04 AS builder
 
-# Core build tools + libraries Drogon needs once it's added
-# (jsoncpp, openssl, uuid, zlib are Drogon's usual system dependencies —
-#  safe to include now so the image doesn't need changes later)
+# Core build tools + libraries Drogon needs if an HTTP layer is added
+# later (jsoncpp, openssl, uuid, zlib are Drogon's usual system
+# dependencies — safe to include now so the image doesn't need changes
+# for that then). Not needed for the CLI binary this image ships today.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -18,10 +19,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
-COPY . .
 
+# Copy only what the build actually needs (not tests/, example/,
+# .venv/, third_party/googletest/, ...) so unrelated file changes don't
+# bust this layer's cache and the build context sent to the daemon
+# stays small.
+COPY CMakeLists.txt ./
+COPY src ./src
+COPY third_party/nlohmann ./third_party/nlohmann
+
+# FITSOLVER_BUILD_PYTHON=OFF: this image only ships the fitsolver_app CLI
+# binary below, not the Python extension module, so there's no need for
+# Python dev headers in the build stage.
+# FITSOLVER_BUILD_TESTS=OFF: skips fetching/building GoogleTest -- no
+# network dependency and no wasted build time for a test binary that
+# never ships. CI (see .github/workflows/ci.yml) already builds and
+# runs the full test suite on every push/PR, so this doesn't reduce
+# actual test coverage.
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
-    && cmake --build build --config Release --parallel
+      -DFITSOLVER_BUILD_PYTHON=OFF -DFITSOLVER_BUILD_TESTS=OFF \
+    && cmake --build build --config Release --target fitsolver_app --parallel
 
 # ---------- Runtime stage ----------
 FROM ubuntu:24.04 AS runtime
@@ -42,5 +59,15 @@ WORKDIR /home/appuser
 # Copy only the built app binary out of the builder stage
 COPY --from=builder /src/build/fitsolver_app ./fitsolver_app
 
-EXPOSE 8080
+# fitsolver_app is a one-shot CLI (reads a JSON packing request from
+# stdin, writes the JSON response to stdout, then exits) -- not a
+# long-running HTTP server, so there's no port to EXPOSE here. Run it
+# with `-i` so stdin is actually connected:
+#
+#   docker run --rm -i ghcr.io/YOUR-ORG/YOUR-REPO:latest < request.json
+#
+# (See the README's "Python bindings" section for the more common way
+# other services are expected to call this: `import fitsolver` directly,
+# or the plain C ABI -- this container is for shelling out to it
+# instead, e.g. from a language with no Python/C++ interop story.)
 ENTRYPOINT ["./fitsolver_app"]

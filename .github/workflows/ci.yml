@@ -19,6 +19,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 1b. The pybind11-based `fitsolver` Python extension module needs
+      #     Python development headers/libs, not just an interpreter --
+      #     setup-python guarantees those are present (the bare runner
+      #     image isn't guaranteed to have them).
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
       # 2. Configure the CMake build (Ninja is faster than the default Makefiles)
       - name: Configure CMake
         run: >
@@ -36,3 +45,11 @@ jobs:
       - name: Run tests
         working-directory: ${{ github.workspace }}/build
         run: ctest --output-on-failure --build-config ${{ env.BUILD_TYPE }}
+
+      # 5. The gtest suite above only exercises the C++ core -- it never
+      #    touches pymodule.cpp, so it can't catch a broken Python
+      #    binding (wrong signature, bad conversion, etc). This is the
+      #    step that actually imports the compiled module and packs a
+      #    real request through it end-to-end.
+      - name: Test Python bindings
+        run: python tests/test_fitsolver.py

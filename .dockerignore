@@ -1,4 +1,27 @@
 build/
+build_*/
 .git/
 .github/
 *.md
+
+# Python virtualenv / caches -- never needed inside the image, and can be
+# tens of MB, which otherwise gets sent to the Docker daemon on every build.
+.venv/
+__pycache__/
+*.pyc
+
+# Only third_party/nlohmann is actually used by the build (see
+# CMakeLists.txt); the vendored googletest source is dead weight here --
+# tests are built via FetchContent, not this copy, and are disabled
+# entirely in the production image (FITSOLVER_BUILD_TESTS=OFF).
+third_party/googletest/
+
+# Editor/IDE config, not part of the build.
+.vscode/
+.devcontainer/
+
+# Example scripts, generated output, and compiled Python modules --
+# irrelevant to the C++ CLI image built from the root Dockerfile.
+example/
+*.pyd
+*.so
