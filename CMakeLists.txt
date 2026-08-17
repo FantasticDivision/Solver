@@ -99,7 +99,9 @@ if(FITSOLVER_BUILD_TESTS)
   add_executable(fitsolver_tests 
   tests/packer_test.cpp
   tests/rotation_test.cpp
-  tests/orientateditem_test.cpp)
+  tests/orientateditem_test.cpp
+  tests/voidfinder_test.cpp
+  tests/voidspace_test.cpp)
   target_link_libraries(fitsolver_tests
     PRIVATE
       fitsolver_core
