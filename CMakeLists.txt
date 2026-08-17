@@ -96,7 +96,9 @@ if(FITSOLVER_BUILD_TESTS)
 
   enable_testing()
 
-  add_executable(fitsolver_tests tests/packer_test.cpp)
+  add_executable(fitsolver_tests 
+  tests/packer_test.cpp
+  tests/rotation_test.cpp)
   target_link_libraries(fitsolver_tests
     PRIVATE
       fitsolver_core
