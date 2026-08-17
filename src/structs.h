@@ -1,4 +1,5 @@
-#pragma once 
+// #pragma once
+
 #include <string>
 #include <vector>
 #include <optional>
@@ -100,3 +101,29 @@ int main()
     return 0;
 }
 
+void to_json(json& j, const Item& item)
+{
+    j = json{
+        {"ItemCode", item.itemCode},
+        {"ItemReference", item.itemReference},
+        {"Width", item.width},
+        {"Length", item.length},
+        {"Depth", item.depth}
+    };
+    if (item.boxGroup)
+        j["BoxGroup"] = *item.boxGroup;
+}
+
+void to_json(json& j, const Box& box)
+{
+    j = json{
+        {"Reference", box.reference},
+        {"Width", box.width},
+        {"Length", box.length},
+        {"Depth", box.depth},
+        {"Active", box.active}
+    };
+    if (box.maxWeight)     j["MaxWeight"] = *box.maxWeight;
+    if (box.boxWeight)     j["BoxWeight"] = *box.boxWeight;
+    if (box.maximumBoxes)  j["MaximumBoxes"] = *box.maximumBoxes;
+}
