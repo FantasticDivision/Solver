@@ -104,7 +104,8 @@ TEST(Packer, OverweightItemIsNotPackedIntoUndersizedWeightBox) {
   // The light item should be packed; the heavy one cannot fit under this
   // box's weight limit and should be reported unplaced.
   ASSERT_EQ(response.boxes.Count(), 1u);
-  EXPECT_EQ(response.boxes.begin()->GetItems().Count(), 1u);
+  //This should Assert before dereferencing
+  ASSERT_EQ(response.boxes.begin()->GetItems().Count(), 1u);
   EXPECT_EQ(response.boxes.begin()->GetItems().begin()->GetItem()->GetItemCode(), "LIGHT");
   ASSERT_EQ(response.unplaced_items.Count(), 1u);
   EXPECT_EQ((*response.unplaced_items.begin())->GetItemCode(), "HEAVY");
