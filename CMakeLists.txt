@@ -101,7 +101,12 @@ if(FITSOLVER_BUILD_TESTS)
   tests/rotation_test.cpp
   tests/orientateditem_test.cpp
   tests/voidfinder_test.cpp
-  tests/voidspace_test.cpp)
+  tests/voidspace_test.cpp
+  tests/item_classes_test.cpp
+  tests/box_classes_test.cpp
+  tests/packed_classes_test.cpp
+  tests/request_classes_test.cpp
+  tests/packing_classes_test.cpp)
   target_link_libraries(fitsolver_tests
     PRIVATE
       fitsolver_core
