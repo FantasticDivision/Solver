@@ -238,7 +238,8 @@ TEST(Packer, DumpProducesParseableJson) {
 
   const std::string dumped = response.Dump();
   const nlohmann::json parsed = nlohmann::json::parse(dumped);
-  EXPECT_TRUE(parsed.at("success").get<bool>());
+  const bool success = parsed.at("success").get<bool>();
+  EXPECT_TRUE(success);
   EXPECT_EQ(parsed.at("placements").size(), 1u);
   EXPECT_TRUE(parsed.at("unplaced_item_codes").empty());
 }
@@ -254,14 +255,16 @@ TEST(Packer, EmptyRequestSucceedsTrivially) {
 
 TEST(ConcreteItem, ExposesPropertiesVolumeAndJson) {
   ConcreteItem item("SKU-1", "Widget", 2.0, 3.0, 4.0, 1.5, Rotation::kKeepFlat);
+  const auto json = item.ToJson();
+  const double volume = json.at("Volume").get<double>();
 
   EXPECT_EQ(item.GetItemCode(), "SKU-1");
   EXPECT_EQ(item.GetItemReference(), "Widget");
   EXPECT_DOUBLE_EQ(item.GetVolume(), 24.0);
-  const auto json = item.ToJson();
+
   EXPECT_EQ(json.at("AllowedRotation"), "KeepFlat");
   EXPECT_TRUE(json.at("BoxGroup").is_null());
-  EXPECT_DOUBLE_EQ(json.at("Volume").get<double>(), 24.0);
+  EXPECT_DOUBLE_EQ(volume, 24.0);
 }
 
 TEST(ConcreteItem, ParsesDefaultsAndNullOptionalValues) {
@@ -300,8 +303,9 @@ TEST(ConcreteBox, CalculatesWeightCapacityAndJson) {
   EXPECT_DOUBLE_EQ(box.GetInnerVolume(), 24.0);
   EXPECT_DOUBLE_EQ(box.GetWeightCapacityForItems(), 8.5);
   const auto json = box.ToJson();
+  const bool active = json.at("Active").get<bool>();
   EXPECT_EQ(json.at("Reference"), "BOX");
-  EXPECT_FALSE(json.at("Active").get<bool>());
+  EXPECT_FALSE(active);
   EXPECT_TRUE(json.at("MaximumBoxes").is_null());
 }
 
@@ -419,15 +423,16 @@ TEST(PackedItem, OffsetPreservesOrientationAndSerialisesPlacement) {
       ConcreteItem("A", "Widget", 2, 3, 4, 1.5), "G");
   const auto packed = MakePackedItem(item, 1, 2, 3, 3, 2, 4, "LWD");
   const auto offset = packed.WithOffset(10, 20, 30);
+  const auto json = offset.ToJson();
+  const double original_width = json.at("original_width").get<double>();
 
   EXPECT_DOUBLE_EQ(offset.GetX(), 11);
   EXPECT_DOUBLE_EQ(offset.GetY(), 22);
   EXPECT_DOUBLE_EQ(offset.GetZ(), 33);
   EXPECT_EQ(offset.GetOrientationCode(), "LWD");
   EXPECT_TRUE(offset.IsRotated());
-  const auto json = offset.ToJson();
   EXPECT_EQ(json.at("box_group"), "G");
-  EXPECT_DOUBLE_EQ(json.at("original_width").get<double>(), 2.0);
+  EXPECT_DOUBLE_EQ(original_width, 2.0);
 }
 
 TEST(PackedItemList, TotalsAndLinkedGroupsAreAccurate) {
@@ -446,6 +451,7 @@ TEST(PackedBox, ComputesWeightGeometryUtilisationAndJson) {
   fitsolver::PackedBox packed(MakeBox("BOX", 10, 20, 30, 20, 2));
   packed.AddItem(MakePackedItem(MakeItem("A", 2, 3, 4, 5), 1, 2, 3));
   packed.AddItem(MakePackedItem(MakeItem("B", 3, 2, 1, 4), 5, 7, 11));
+  const std::size_t item_count = packed.ToJson().at("item_count").get<std::size_t>();
 
   EXPECT_DOUBLE_EQ(packed.GetItemWeight(), 9.0);
   EXPECT_DOUBLE_EQ(packed.GetWeight(), 11.0);
@@ -454,7 +460,8 @@ TEST(PackedBox, ComputesWeightGeometryUtilisationAndJson) {
   EXPECT_DOUBLE_EQ(packed.GetUsedLength(), 9.0);
   EXPECT_DOUBLE_EQ(packed.GetUsedDepth(), 12.0);
   EXPECT_DOUBLE_EQ(packed.GetUnusedVolume(), 6000.0 - 30.0);
-  EXPECT_DOUBLE_EQ(packed.ToJson().at("item_count").get<double>(), 2.0);
+
+  EXPECT_EQ(item_count, 2u);
 }
 
 TEST(PackedBox, UnlimitedWeightAndZeroVolumeAreHandled) {
