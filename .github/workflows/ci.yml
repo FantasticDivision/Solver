@@ -1,9 +1,8 @@
 name: CI
 
-# Runs on every push and every pull request targeting main
+# Runs on every branch push and every pull request targeting main.
 on:
   push:
-    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
@@ -53,3 +52,43 @@ jobs:
       #    real request through it end-to-end.
       - name: Test Python bindings
         run: python tests/test_fitsolver.py
+
+      # Build a separately instrumented copy of the complete core with
+      # libFuzzer, AddressSanitizer, and UndefinedBehaviorSanitizer. The
+      # time limit keeps this suitable for every push; longer fuzzing can
+      # use the same target locally or in a scheduled workflow.
+      - name: Configure fuzzer
+        run: >
+          cmake -S ${{ github.workspace }}
+          -B ${{ github.workspace }}/build-fuzz
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_CXX_COMPILER=clang++
+          -DFITSOLVER_BUILD_TESTS=OFF
+          -DFITSOLVER_BUILD_PYTHON=OFF
+          -DFITSOLVER_BUILD_FUZZER=ON
+
+      - name: Build fuzzer
+        run: cmake --build ${{ github.workspace }}/build-fuzz --target fuzz_pack_request
+
+      - name: Prepare fuzzer artifacts
+        run: mkdir -p ${{ github.workspace }}/build-fuzz/fuzz-artifacts
+
+      - name: Run fuzzer
+        timeout-minutes: 3
+        run: >
+          ${{ github.workspace }}/build-fuzz/fuzz_pack_request
+          ${{ github.workspace }}/tests/fuzz_corpus
+          -max_total_time=60
+          -max_len=65536
+          -artifact_prefix=${{ github.workspace }}/build-fuzz/fuzz-artifacts/
+          -print_final_stats=1
+
+      # A crashing input is normally only a few bytes. Preserve it so the
+      # failure can be reproduced locally and added to the permanent corpus.
+      - name: Upload fuzzer crash input
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-pack-request-crash
+          path: ${{ github.workspace }}/build-fuzz/fuzz-artifacts/
+          if-no-files-found: ignore

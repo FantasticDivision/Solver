@@ -25,7 +25,7 @@ target_include_directories(nlohmann_json INTERFACE ${CMAKE_SOURCE_DIR}/third_par
 # One file per class (Item/LinkedItem, Box/LimitedSupplyBox, the List and
 # Sorter types, the packing engine itself, ...), mirroring the structure
 # of the DVDoug/BoxPacker PHP library this design is inspired by.
-add_library(fitsolver_core
+set(FITSOLVER_CORE_SOURCES
   src/Rotation.cpp
   src/Item.cpp
   src/LinkedItem.cpp
@@ -52,6 +52,8 @@ add_library(fitsolver_core
   src/PackRequest.cpp
   src/PackResponse.cpp
 )
+
+add_library(fitsolver_core ${FITSOLVER_CORE_SOURCES})
 target_include_directories(fitsolver_core PUBLIC src)
 target_link_libraries(fitsolver_core PUBLIC nlohmann_json)
 # fitsolver_core is linked into fitsolver_lib (SHARED) below, so its object
@@ -122,6 +124,38 @@ if(FITSOLVER_BUILD_TESTS)
   # whole suite; run the binary directly (or `ctest -V`) to see each
   # individual TEST() case's own pass/fail.
   add_test(NAME fitsolver_tests COMMAND fitsolver_tests)
+endif()
+
+# --- Coverage-guided fuzzing (Clang/libFuzzer + sanitizers) -------------
+# Disabled for ordinary builds. CI enables it in a separate Clang build so
+# the complete core is instrumented without adding sanitizer requirements to
+# the application, shared library, Python module, or normal GoogleTest run.
+option(FITSOLVER_BUILD_FUZZER "Build the PackRequest libFuzzer target" OFF)
+
+if(FITSOLVER_BUILD_FUZZER)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "FITSOLVER_BUILD_FUZZER requires Clang/libFuzzer")
+  endif()
+
+  add_library(fitsolver_fuzz_core STATIC ${FITSOLVER_CORE_SOURCES})
+  target_include_directories(fitsolver_fuzz_core PUBLIC src)
+  target_link_libraries(fitsolver_fuzz_core PUBLIC nlohmann_json)
+  target_compile_options(fitsolver_fuzz_core PRIVATE
+    -fsanitize=fuzzer-no-link,address,undefined
+    -fno-omit-frame-pointer
+    -fno-sanitize-recover=all
+  )
+
+  add_executable(fuzz_pack_request tests/fuzz_pack_request.cpp)
+  target_link_libraries(fuzz_pack_request PRIVATE fitsolver_fuzz_core)
+  target_compile_options(fuzz_pack_request PRIVATE
+    -fsanitize=fuzzer-no-link,address,undefined
+    -fno-omit-frame-pointer
+    -fno-sanitize-recover=all
+  )
+  target_link_options(fuzz_pack_request PRIVATE
+    -fsanitize=fuzzer,address,undefined
+  )
 endif()
 
 # --- Python extension module (pybind11) -----------------------------------
