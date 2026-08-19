@@ -1,7 +1,7 @@
 // Minimal standalone usage sample for the C++ core -- not part of the
-// test suite (see packer_test.cpp for that), just a quick way to see the
+// test suite (see ../integration/packer_test.cpp for that), just a quick way to see the
 // ItemList/BoxList/Packer API in isolation. Build it yourself, e.g.:
-//   g++ -std=c++17 -Isrc -Ithird_party tests/test_solver.cpp src/*.cpp -o test_solver
+//   g++ -std=c++17 -Isrc -Ithird_party tests/manual/test_solver.cpp src/*.cpp -o test_solver
 #include <memory>
 
 #include "BoxList.h"

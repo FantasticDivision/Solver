@@ -62,6 +62,14 @@ target_link_libraries(fitsolver_core PUBLIC nlohmann_json)
 # -fPIC").
 set_target_properties(fitsolver_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# --- Manual end-to-end timing harness ------------------------------------
+# Kept out of the default build and CTest because benchmark results should
+# only be collected intentionally (and preferably from a Release build).
+add_executable(fitsolver_timed_test EXCLUDE_FROM_ALL
+  tests/manual/timed_test.cpp
+)
+target_link_libraries(fitsolver_timed_test PRIVATE fitsolver_core)
+
 # --- CLI executable (reads a JSON request from stdin, prints the response)
 add_executable(fitsolver_app src/main.cpp)
 target_link_libraries(fitsolver_app PRIVATE fitsolver_core)
@@ -98,17 +106,18 @@ if(FITSOLVER_BUILD_TESTS)
 
   enable_testing()
 
-  add_executable(fitsolver_tests 
-  tests/packer_test.cpp
-  tests/rotation_test.cpp
-  tests/orientateditem_test.cpp
-  tests/voidfinder_test.cpp
-  tests/voidspace_test.cpp
-  tests/item_classes_test.cpp
-  tests/box_classes_test.cpp
-  tests/packed_classes_test.cpp
-  tests/request_classes_test.cpp
-  tests/packing_classes_test.cpp)
+  add_executable(fitsolver_tests
+    tests/integration/packer_test.cpp
+    tests/unit/rotation_test.cpp
+    tests/unit/orientateditem_test.cpp
+    tests/unit/voidfinder_test.cpp
+    tests/unit/voidspace_test.cpp
+    tests/unit/item_classes_test.cpp
+    tests/unit/box_classes_test.cpp
+    tests/unit/packed_classes_test.cpp
+    tests/unit/request_classes_test.cpp
+    tests/unit/packing_classes_test.cpp
+  )
   target_link_libraries(fitsolver_tests
     PRIVATE
       fitsolver_core
@@ -146,7 +155,7 @@ if(FITSOLVER_BUILD_FUZZER)
     -fno-sanitize-recover=all
   )
 
-  add_executable(fuzz_pack_request tests/fuzz_pack_request.cpp)
+  add_executable(fuzz_pack_request tests/fuzz/fuzz_pack_request.cpp)
   target_link_libraries(fuzz_pack_request PRIVATE fitsolver_fuzz_core)
   target_compile_options(fuzz_pack_request PRIVATE
     -fsanitize=fuzzer-no-link,address,undefined

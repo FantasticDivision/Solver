@@ -51,7 +51,7 @@ jobs:
       #    step that actually imports the compiled module and packs a
       #    real request through it end-to-end.
       - name: Test Python bindings
-        run: python tests/test_fitsolver.py
+        run: python tests/integration/test_fitsolver.py
 
       # Build a separately instrumented copy of the complete core with
       # libFuzzer, AddressSanitizer, and UndefinedBehaviorSanitizer. The
@@ -77,7 +77,7 @@ jobs:
         timeout-minutes: 3
         run: >
           ${{ github.workspace }}/build-fuzz/fuzz_pack_request
-          ${{ github.workspace }}/tests/fuzz_corpus
+          ${{ github.workspace }}/tests/fuzz/corpus
           -max_total_time=60
           -max_len=65536
           -artifact_prefix=${{ github.workspace }}/build-fuzz/fuzz-artifacts/

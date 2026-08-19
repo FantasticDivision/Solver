@@ -1,8 +1,8 @@
 """
 test_fitsolver.py
 
-Manual smoke test of the compiled `fitsolver` extension module, using
-the real items.json / boxes.json data.
+Integration smoke test of the compiled `fitsolver` extension module, using
+the real fixtures/items.json and fixtures/boxes.json data.
 
     python test_fitsolver.py
 """
@@ -16,7 +16,7 @@ import sys
 
 def _add_build_dir_to_path() -> None:
     here = os.path.dirname(os.path.abspath(__file__))
-    build_dir = os.path.join(here, "..", "build")
+    build_dir = os.path.join(here, "..", "..", "build")
     candidates = [build_dir, os.path.join(build_dir, "Release"), os.path.join(build_dir, "Debug")]
 
     for candidate in candidates:
@@ -43,7 +43,7 @@ import fitsolver as a  # noqa: E402  (must come after the sys.path fix above)
 
 def _test_c_abi() -> None:
     here = os.path.dirname(os.path.abspath(__file__))
-    build_dir = os.path.join(here, "..", "build")
+    build_dir = os.path.join(here, "..", "..", "build")
     candidates = []
     for directory in (build_dir, os.path.join(build_dir, "Release"), os.path.join(build_dir, "Debug")):
         for name in ("fitsolver_lib.dll", "fitsolver_lib.so", "fitsolver_lib.dylib"):
@@ -78,9 +78,9 @@ def _test_c_abi() -> None:
 def main():
     _test_c_abi()
     here = os.path.dirname(os.path.abspath(__file__))
-    with open(os.path.join(here, "items.json")) as f:
+    with open(os.path.join(here, "..", "fixtures", "items.json")) as f:
         items = json.load(f)
-    with open(os.path.join(here, "boxes.json")) as f:
+    with open(os.path.join(here, "..", "fixtures", "boxes.json")) as f:
         boxes = json.load(f)
 
     request = {"items": items, "boxes": boxes}
