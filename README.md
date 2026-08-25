@@ -38,10 +38,12 @@ src/
   abi.h / abi.cpp                # Plain C ABI (fitsolver_solve/fitsolver_free)
   main.cpp                       # fitsolver_app CLI: reads a JSON request, prints JSON
 tests/
-  packer_test.cpp             # Google Test suite for the C++ core
-  test_solver.cpp             # Minimal standalone C++ usage sample
-  test_fitsolver.py           # Manual smoke test for the Python module
-  items.json / boxes.json     # Sample request data used by the tests/examples
+  unit/                       # Focused GoogleTest coverage by component
+  integration/                # End-to-end C++ and Python binding tests
+  fuzz/                       # libFuzzer target and permanent seed corpus
+  fixtures/                   # Sample JSON data used by tests/examples
+  manual/                     # Standalone samples and manual test placeholders
+  TEST_GUIDE.md               # Behaviour documented by the GoogleTest suite
 example/
   simple_solve.py             # Easiest Python usage: JSON in, JSON out
   rich_api_example.py         # Feature-rich Python usage: real objects/attributes
@@ -262,7 +264,7 @@ export PYTHONPATH="$PWD/build/Release:$PYTHONPATH"   # Windows (bash)
 export PYTHONPATH="$PWD/build:$PYTHONPATH"           # Linux/macOS
 ```
 
-Then run the examples (from the repo root, so the relative `tests/*.json`
+Then run the examples (from the repo root, so the relative `tests/fixtures/*.json`
 paths resolve, or after copying the module into your own project):
 
 ```bash
@@ -389,7 +391,7 @@ The engine is split into cooperating classes, each in its own file under
   just that gap).
 
 This is a solid greedy heuristic, not an exhaustive/optimal packer --
-`tests/packer_test.cpp` documents the behaviour it guarantees (no
+`tests/integration/packer_test.cpp` documents the behaviour it guarantees (no
 overlaps, weight limits respected, rotation rules respected, linked
 groups never split). It does not implement exhaustive
 all-permutations search across box choices; that would be a reasonable

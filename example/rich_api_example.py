@@ -31,9 +31,9 @@ def demo_pack_dicts() -> None:
     print("=" * 70)
 
     here = os.path.dirname(os.path.abspath(__file__))
-    with open(os.path.join(here, "..", "tests", "items.json")) as f:
+    with open(os.path.join(here, "..", "tests", "fixtures", "items.json")) as f:
         items = json.load(f)
-    with open(os.path.join(here, "..", "tests", "boxes.json")) as f:
+    with open(os.path.join(here, "..", "tests", "fixtures", "boxes.json")) as f:
         boxes = json.load(f)
 
     result = fitsolver.pack_dicts(items, boxes)

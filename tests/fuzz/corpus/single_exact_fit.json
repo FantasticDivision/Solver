@@ -1,0 +1,1 @@
+{"items":[{"ItemCode":"A","Width":10,"Length":20,"Depth":30,"Weight":8,"AllowedRotation":"Never"}],"boxes":[{"Reference":"B","Width":10,"Length":20,"Depth":30,"MaxWeight":10,"BoxWeight":2}]}
