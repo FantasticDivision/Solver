@@ -342,10 +342,12 @@ Request:
 }
 ```
 
-`BoxGroup`, `AllowedRotation`, `MaxWeight`, `BoxWeight`, `Active`, and
-`MaximumBoxes` are all optional (defaults: no group, `"BestFit"`
-rotation, no weight limit, 0 empty weight, active, unlimited quantity).
-`AllowedRotation` is one of `"Never"`, `"KeepFlat"`, `"BestFit"`.
+`BoxGroup` and `AllowedRotation` are optional on items (defaults: no
+group, `"BestFit"` rotation). `BoxWeight`, `Active`, and `MaximumBoxes`
+are optional on boxes (defaults: 0 empty weight, active, unlimited
+quantity) -- but every box **must** include `MaxWeight`; there's no
+"unlimited weight" box, so a request with a box missing `MaxWeight` is
+rejected. `AllowedRotation` is one of `"Never"`, `"KeepFlat"`, `"BestFit"`.
 `ItemCode` must be unique across the request. Items sharing a
 non-empty `BoxGroup` are always kept together in the same box.
 
@@ -544,3 +546,10 @@ everyone else just runs one command and gets the identical
 environment, instead of each person separately debugging missing
 `libssl-dev` or a wrong CMake version on their own machine.
 
+
+
+Build Notes (need to make this pretty)
+cd "/FantasticSolver" && cmake -B build 2>&1 | tail -10
+
+
+cd "/FantasticSolver" && cmake --build build --config Release --parallel 2>&1 | tail -20 && ./build/Release/fitsolver_tests.exe

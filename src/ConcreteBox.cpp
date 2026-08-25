@@ -26,11 +26,15 @@ BoxPtr MakeBoxFromJson(const nlohmann::json& j) {
   if (!j.contains("Reference")) {
     throw std::invalid_argument("box is missing required field 'Reference'");
   }
+  if (!j.contains("MaxWeight") || j.at("MaxWeight").is_null()) {
+    throw std::invalid_argument("box '" + j.at("Reference").get<std::string>() +
+                                 "' is missing required field 'MaxWeight'");
+  }
 
   ConcreteBox base(j.at("Reference").get<std::string>(), j.at("Width").get<double>(),
                     j.at("Length").get<double>(), j.at("Depth").get<double>(),
-                    GetOptionalNumber(j, "MaxWeight", kNoWeightLimit),
-                    GetOptionalNumber(j, "BoxWeight", 0.0), GetOptionalBool(j, "Active", true));
+                    j.at("MaxWeight").get<double>(), GetOptionalNumber(j, "BoxWeight", 0.0),
+                    GetOptionalBool(j, "Active", true));
 
   if (j.contains("MaximumBoxes") && !j.at("MaximumBoxes").is_null()) {
     return std::make_shared<ConcreteLimitedSupplyBox>(std::move(base),
