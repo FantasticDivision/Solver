@@ -27,6 +27,14 @@
 //$timer = [System.Diagnostics.Stopwatch]::StartNew(); .\build\fitsolver_tests.exe --gtest_filter=PackerPropertyTest.*; $timer.Stop(); Write-Host "Elapsed:" $timer.Elapsed.TotalSeconds "seconds"
 
 
+//define this only once in ter:
+// function Measure-GTest { param([string]$Name) $timer = [System.Diagnostics.Stopwatch]::StartNew(); & .\build\fitsolver_tests.exe "--gtest_filter=$Name" --gtest_brief=1; $exitCode = $LASTEXITCODE; $timer.Stop(); Write-Host "Test:" $Name "| Exit:" $exitCode "| Time:" $timer.Elapsed.TotalMilliseconds "ms" }
+
+//then time and test:
+//Measure-GTest "Packer.SingleItemFitsInSingleBox"
+
+
+
 
 namespace {
 
