@@ -16,7 +16,9 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
   if (size > 64 * 1024) return 0;
 
   try {
+    //converts the bytes into json input
     const std::string input(reinterpret_cast<const char*>(data), size);
+    //packing pipeline
     const fitsolver::PackRequest request = fitsolver::PackRequest::FromJsonString(input);
     const fitsolver::PackResponse response = fitsolver::Packer().Pack(request);
 
