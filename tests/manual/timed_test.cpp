@@ -18,27 +18,21 @@
 
 //cmake --build build --config Release --target fitsolver_tests
 
+//run all tests:
+//.\build\fitsolver_tests.exe
 
-//time all tests
-//$timer = [System.Diagnostics.Stopwatch]::StartNew(); .\build\fitsolver_tests.exe --gtest_brief=1; $timer.Stop(); Write-Host "Elapsed:" $timer.Elapsed.TotalSeconds "seconds"
+//to run this file x times:
+//.\build\fitsolver_timed_test.exe x
 
-
-//time 200 random item packing reqs - RandomRequestsPreserveAccountingBoundsAndWeight - packer_test.cpp - line 598
-//$timer = [System.Diagnostics.Stopwatch]::StartNew(); .\build\fitsolver_tests.exe --gtest_filter=PackerPropertyTest.*; $timer.Stop(); Write-Host "Elapsed:" $timer.Elapsed.TotalSeconds "seconds"
-
-
-//define this only once in ter:
+//to time specific tests in the test suite. define this only once in ter:
 // function Measure-GTest { param([string]$Name) $timer = [System.Diagnostics.Stopwatch]::StartNew(); & .\build\fitsolver_tests.exe "--gtest_filter=$Name" --gtest_brief=1; $exitCode = $LASTEXITCODE; $timer.Stop(); Write-Host "Test:" $Name "| Exit:" $exitCode "| Time:" $timer.Elapsed.TotalMilliseconds "ms" }
 
 //then time and test:
 //Measure-GTest "Packer.SingleItemFitsInSingleBox"
 
-
 //list available test names:
 //.\build\fitsolver_tests.exe --gtest_list_tests
 
-//to run this file x times:
-//.\build\fitsolver_timed_test.exe x
 
 
 namespace {
