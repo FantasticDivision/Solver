@@ -1,12 +1,7 @@
 // Coverage-guided fuzz target for the public JSON entry point.
 //
 // This target is separate from the normal GoogleTest suite.
-// executable. Build and run it with Clang/libFuzzer through CMake:
-//   cmake -S . -B build-fuzz -DCMAKE_CXX_COMPILER=clang++
-//     -DFITSOLVER_BUILD_TESTS=OFF -DFITSOLVER_BUILD_PYTHON=OFF
-//     -DFITSOLVER_BUILD_FUZZER=ON
-//   cmake --build build-fuzz --target fuzz_pack_request
-//   ./build-fuzz/fuzz_pack_request tests/fuzz/corpus -max_total_time=60
+// made for the github CI pipeline
 
 #include <cstddef>
 #include <cstdint>

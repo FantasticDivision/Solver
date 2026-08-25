@@ -11,6 +11,23 @@
 #include "PackResponse.h"
 #include "Packer.h"
 
+
+//for testing algs time locally:
+
+//cmake -S . -B build
+
+//cmake --build build --config Release --target fitsolver_tests
+
+
+//time all tests
+//$timer = [System.Diagnostics.Stopwatch]::StartNew(); .\build\fitsolver_tests.exe --gtest_brief=1; $timer.Stop(); Write-Host "Elapsed:" $timer.Elapsed.TotalSeconds "seconds"
+
+
+//time 200 random item packing reqs - RandomRequestsPreserveAccountingBoundsAndWeight - packer_test.cpp - line 598
+//$timer = [System.Diagnostics.Stopwatch]::StartNew(); .\build\fitsolver_tests.exe --gtest_filter=PackerPropertyTest.*; $timer.Stop(); Write-Host "Elapsed:" $timer.Elapsed.TotalSeconds "seconds"
+
+
+
 namespace {
 
 constexpr std::size_t kDefaultIterations = 100;
