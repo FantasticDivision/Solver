@@ -34,6 +34,11 @@
 //Measure-GTest "Packer.SingleItemFitsInSingleBox"
 
 
+//list available test names:
+//.\build\fitsolver_tests.exe --gtest_list_tests
+
+//to run this file x times:
+//.\build\fitsolver_timed_test.exe x
 
 
 namespace {
