@@ -22,6 +22,7 @@ char* CopyToCString(const std::string& text) {
 
 extern "C" char* fitsolver_solve(const char* request_json) {
   try {
+    static fitsolver::CachingPacker packer;  // created once, reused for every call
     const fitsolver::PackRequest request =
         fitsolver::PackRequest::FromJsonString(request_json != nullptr ? request_json : "{}");
     const fitsolver::PackResponse response = fitsolver::Packer().Pack(request);
