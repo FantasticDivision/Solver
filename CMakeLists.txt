@@ -36,6 +36,9 @@ add_library(fitsolver_core
   src/DefaultItemSorter.cpp
   src/DefaultBoxSorter.cpp
   src/DefaultPackedBoxSorter.cpp
+  src/PackingEntropy.cpp
+  src/EntropyItemSorter.cpp
+  src/EntropyBoxSorter.cpp
   src/ItemList.cpp
   src/BoxList.cpp
   src/OrientatedItem.cpp
@@ -51,6 +54,7 @@ add_library(fitsolver_core
   src/Packer.cpp
   src/PackRequest.cpp
   src/PackResponse.cpp
+  src/SolutionCache.cpp
 )
 target_include_directories(fitsolver_core PUBLIC src)
 target_link_libraries(fitsolver_core PUBLIC nlohmann_json)
@@ -96,12 +100,14 @@ if(FITSOLVER_BUILD_TESTS)
 
   enable_testing()
 
-  add_executable(fitsolver_tests 
+  add_executable(fitsolver_tests
   tests/packer_test.cpp
   tests/rotation_test.cpp
   tests/orientateditem_test.cpp
   tests/voidfinder_test.cpp
-  tests/voidspace_test.cpp)
+  tests/voidspace_test.cpp
+  tests/entropy_test.cpp
+  tests/solutioncache_test.cpp)
   target_link_libraries(fitsolver_tests
     PRIVATE
       fitsolver_core
