@@ -54,7 +54,6 @@ set(FITSOLVER_CORE_SOURCES
   src/Packer.cpp
   src/PackRequest.cpp
   src/PackResponse.cpp
-  src/SolutionCache.cpp
 )
 
 add_library(fitsolver_core ${FITSOLVER_CORE_SOURCES})
@@ -122,7 +121,6 @@ if(FITSOLVER_BUILD_TESTS)
     tests/unit/request_classes_test.cpp
     tests/unit/packing_classes_test.cpp
     tests/unit/entropy_test.cpp
-    tests/unit/solutioncache_test.cpp
   )
   target_link_libraries(fitsolver_tests
     PRIVATE
