@@ -12,10 +12,10 @@
 #include "PackResponse.h"
 #include "Packer.h"
 #include "PackingEntropy.h"
+#include "test_helpers.h"
 
 using fitsolver::BoxList;
 using fitsolver::BoxPtr;
-using fitsolver::ConcreteBox;
 using fitsolver::ConcreteItem;
 using fitsolver::ConcreteLinkedItem;
 using fitsolver::EntropyBoxSorter;
@@ -26,21 +26,8 @@ using fitsolver::Packer;
 using fitsolver::PackResponse;
 using fitsolver::ShannonEntropy;
 using fitsolver::ShapeEntropy;
-
-namespace {
-
-ItemPtr MakeItem(const std::string& code, double width, double length, double depth,
-                  double weight) {
-  return std::make_shared<ConcreteItem>(code, code, width, length, depth, weight);
-}
-
-BoxPtr MakeBox(const std::string& reference, double width, double length, double depth,
-                double max_weight = 100.0, double empty_weight = 0.0) {
-  return std::make_shared<ConcreteBox>(reference, width, length, depth, max_weight, empty_weight,
-                                        /*active=*/true);
-}
-
-}  // namespace
+using fitsolver::test::MakeBox;
+using fitsolver::test::MakeItem;
 
 // ---------------------------------------------------------------------
 // PackingEntropy

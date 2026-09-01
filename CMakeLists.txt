@@ -25,7 +25,7 @@ target_include_directories(nlohmann_json INTERFACE ${CMAKE_SOURCE_DIR}/third_par
 # One file per class (Item/LinkedItem, Box/LimitedSupplyBox, the List and
 # Sorter types, the packing engine itself, ...), mirroring the structure
 # of the DVDoug/BoxPacker PHP library this design is inspired by.
-add_library(fitsolver_core
+set(FITSOLVER_CORE_SOURCES
   src/Rotation.cpp
   src/Item.cpp
   src/LinkedItem.cpp
@@ -56,6 +56,8 @@ add_library(fitsolver_core
   src/PackResponse.cpp
   src/SolutionCache.cpp
 )
+
+add_library(fitsolver_core ${FITSOLVER_CORE_SOURCES})
 target_include_directories(fitsolver_core PUBLIC src)
 target_link_libraries(fitsolver_core PUBLIC nlohmann_json)
 # fitsolver_core is linked into fitsolver_lib (SHARED) below, so its object
@@ -63,6 +65,14 @@ target_link_libraries(fitsolver_core PUBLIC nlohmann_json)
 # refuse to link a non-PIC static lib into a shared one ("recompile with
 # -fPIC").
 set_target_properties(fitsolver_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# --- Manual end-to-end timing harness ------------------------------------
+# Kept out of the default build and CTest because benchmark results should
+# only be collected intentionally (and preferably from a Release build).
+add_executable(fitsolver_timed_test EXCLUDE_FROM_ALL
+  tests/manual/timed_test.cpp
+)
+target_link_libraries(fitsolver_timed_test PRIVATE fitsolver_core)
 
 # --- CLI executable (reads a JSON request from stdin, prints the response)
 add_executable(fitsolver_app src/main.cpp)
@@ -101,13 +111,19 @@ if(FITSOLVER_BUILD_TESTS)
   enable_testing()
 
   add_executable(fitsolver_tests
-  tests/packer_test.cpp
-  tests/rotation_test.cpp
-  tests/orientateditem_test.cpp
-  tests/voidfinder_test.cpp
-  tests/voidspace_test.cpp
-  tests/entropy_test.cpp
-  tests/solutioncache_test.cpp)
+    tests/integration/packer_test.cpp
+    tests/unit/rotation_test.cpp
+    tests/unit/orientateditem_test.cpp
+    tests/unit/voidfinder_test.cpp
+    tests/unit/voidspace_test.cpp
+    tests/unit/item_classes_test.cpp
+    tests/unit/box_classes_test.cpp
+    tests/unit/packed_classes_test.cpp
+    tests/unit/request_classes_test.cpp
+    tests/unit/packing_classes_test.cpp
+    tests/unit/entropy_test.cpp
+    tests/unit/solutioncache_test.cpp
+  )
   target_link_libraries(fitsolver_tests
     PRIVATE
       fitsolver_core
@@ -123,6 +139,38 @@ if(FITSOLVER_BUILD_TESTS)
   # whole suite; run the binary directly (or `ctest -V`) to see each
   # individual TEST() case's own pass/fail.
   add_test(NAME fitsolver_tests COMMAND fitsolver_tests)
+endif()
+
+# --- Coverage-guided fuzzing (Clang/libFuzzer + sanitizers) -------------
+# Disabled for ordinary builds. CI enables it in a separate Clang build so
+# the complete core is instrumented without adding sanitizer requirements to
+# the application, shared library, Python module, or normal GoogleTest run.
+option(FITSOLVER_BUILD_FUZZER "Build the PackRequest libFuzzer target" OFF)
+
+if(FITSOLVER_BUILD_FUZZER)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(FATAL_ERROR "FITSOLVER_BUILD_FUZZER requires Clang/libFuzzer")
+  endif()
+
+  add_library(fitsolver_fuzz_core STATIC ${FITSOLVER_CORE_SOURCES})
+  target_include_directories(fitsolver_fuzz_core PUBLIC src)
+  target_link_libraries(fitsolver_fuzz_core PUBLIC nlohmann_json)
+  target_compile_options(fitsolver_fuzz_core PRIVATE
+    -fsanitize=fuzzer-no-link,address,undefined
+    -fno-omit-frame-pointer
+    -fno-sanitize-recover=all
+  )
+
+  add_executable(fuzz_pack_request tests/fuzz/fuzz_pack_request.cpp)
+  target_link_libraries(fuzz_pack_request PRIVATE fitsolver_fuzz_core)
+  target_compile_options(fuzz_pack_request PRIVATE
+    -fsanitize=fuzzer-no-link,address,undefined
+    -fno-omit-frame-pointer
+    -fno-sanitize-recover=all
+  )
+  target_link_options(fuzz_pack_request PRIVATE
+    -fsanitize=fuzzer,address,undefined
+  )
 endif()
 
 # --- Python extension module (pybind11) -----------------------------------
