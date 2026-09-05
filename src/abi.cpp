@@ -4,6 +4,7 @@
 #include <cstring>
 #include <string>
 
+#include "CachingPacker.h"
 #include "PackRequest.h"
 #include "PackResponse.h"
 #include "Packer.h"
@@ -22,6 +23,7 @@ char* CopyToCString(const std::string& text) {
 
 extern "C" char* fitsolver_solve(const char* request_json) {
   try {
+    static fitsolver::CachingPacker packer;
     const fitsolver::PackRequest request =
         fitsolver::PackRequest::FromJsonString(request_json != nullptr ? request_json : "{}");
     const fitsolver::PackResponse response = fitsolver::Packer().Pack(request);

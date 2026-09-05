@@ -23,6 +23,10 @@
 // instance actually is (plain vs. linked / quantity-limited); a
 // dynamic_cast under the hood is all that changes.
 //
+// All three entry points share one CachingPacker (see SharedPacker()
+// below), so solving the same request via different entry points still
+// hits the cache.
+//
 // See example/*.py for runnable demonstrations of all three.
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -31,18 +35,27 @@
 #include <string>
 #include <vector>
 
+#include "CachingPacker.h"
 #include "ConcreteBox.h"
 #include "ConcreteItem.h"
 #include "LimitedSupplyBox.h"
 #include "LinkedItem.h"
 #include "PackRequest.h"
 #include "PackResponse.h"
-#include "Packer.h"
 
 namespace py = pybind11;
 using namespace fitsolver;
 
 namespace {
+
+// One CachingPacker, created once and shared by solve()/pack_dicts()/
+// pack() below -- `static` local means it's constructed on first use
+// and then persists for the lifetime of the process, so the cache
+// actually accumulates hits across calls instead of resetting each time.
+CachingPacker& SharedPacker() {
+  static CachingPacker packer;
+  return packer;
+}
 
 // Recursively converts an nlohmann::json value into native Python
 // objects (dict/list/str/float/int/bool/None), so every *.to_dict()
@@ -116,7 +129,7 @@ PackResponse PackDicts(const py::object& item_dicts, const py::object& box_dicts
   for (const auto& item_json : PyListToJson(item_dicts)) items.Insert(MakeItemFromJson(item_json));
   BoxList boxes;
   for (const auto& box_json : PyListToJson(box_dicts)) boxes.Insert(MakeBoxFromJson(box_json));
-  return Packer().Pack(items, boxes);
+  return SharedPacker().Pack(items, boxes);
 }
 
 PackResponse PackObjects(const std::vector<ItemPtr>& items, const std::vector<BoxPtr>& boxes) {
@@ -124,11 +137,11 @@ PackResponse PackObjects(const std::vector<ItemPtr>& items, const std::vector<Bo
   for (const auto& item : items) item_list.Insert(item);
   BoxList box_list;
   for (const auto& box : boxes) box_list.Insert(box);
-  return Packer().Pack(item_list, box_list);
+  return SharedPacker().Pack(item_list, box_list);
 }
 
 std::string SolveJson(const std::string& request_json) {
-  return Packer().Pack(PackRequest::FromJsonString(request_json)).Dump(-1);
+  return SharedPacker().Pack(PackRequest::FromJsonString(request_json)).Dump(-1);
 }
 
 }  // namespace
