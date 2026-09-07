@@ -7,7 +7,7 @@ A minimal, dependency-free `ctypes` client for the FitSolver C ABI
 ## Install
 
 ```bash
-pip install "fitsolver-client @ git+https://github.com/FFitSolver/FantasticSolver.git@main#subdirectory=python/fitsolver_client"
+pip install "fitsolver-client @ git+https://github.com/FantasticDivision/Solver.git@main#subdirectory=python/fitsolver_client"
 ```
 
 or, from a local checkout:
