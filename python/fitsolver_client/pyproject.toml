@@ -1,0 +1,14 @@
+[project]
+name = "fitsolver-client"
+version = "0.1.0"
+description = "Minimal ctypes client for the FitSolver C ABI (fitsolver_lib)"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["fitsolver_client*"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
