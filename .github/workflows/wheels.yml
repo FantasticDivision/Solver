@@ -1,0 +1,145 @@
+name: Wheels
+
+# Builds self-contained fitsolver-client wheels (the ctypes client with
+# the native fitsolver_lib vendored inside) for Linux / macOS / Windows,
+# and publishes them to PyPI on a version tag.
+#
+#   git tag v0.1.0 && git push origin v0.1.0   ->  build + publish
+#   Actions -> Wheels -> Run workflow           ->  build only (artifacts)
+#
+# PyPI publishing uses Trusted Publishing (OIDC): configure the project on
+# PyPI once (pypi.org -> your project -> Publishing) to trust
+#   owner: FantasticDivision   repo: Solver   workflow: wheels.yml
+# No API token / secret required after that.
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "python/fitsolver_client/**"
+      - "src/abi.cpp"
+      - "CMakeLists.txt"
+      - ".github/workflows/wheels.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: wheel (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-latest, container: "quay.io/pypa/manylinux_2_28_x86_64", plat: manylinux_2_28_x86_64 }
+          - { name: macos-x86_64, os: macos-13,      plat: macosx_13_0_x86_64 }
+          - { name: macos-arm64,  os: macos-14,      plat: macosx_14_0_arm64 }
+          - { name: windows-x64,  os: windows-latest, plat: win_amd64 }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The manylinux container ships several CPythons under /opt/python
+      # but not on PATH, and no "python3". Everywhere else, use setup-python.
+      - name: Select Python (manylinux container)
+        if: matrix.container != ''
+        run: echo "/opt/python/cp311-cp311/bin" >> "$GITHUB_PATH"
+
+      - name: Set up Python
+        if: matrix.container == ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip build wheel
+
+      # Ninja + a CMake new enough for the project. The manylinux image has
+      # a modern GCC (devtoolset) already; macOS/Windows runners have a
+      # compiler and CMake preinstalled.
+      - name: Install CMake + Ninja (manylinux container)
+        if: matrix.container != ''
+        run: python -m pip install cmake ninja
+
+      - name: Build fitsolver_lib
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DFITSOLVER_BUILD_TESTS=OFF -DFITSOLVER_BUILD_PYTHON=OFF
+          cmake --build build --config Release --target fitsolver_lib
+
+      - name: Vendor the built library into the package
+        run: python python/fitsolver_client/tools/vendor_lib.py --build-dir build
+
+      - name: Build wheel
+        run: python -m build --wheel python/fitsolver_client --outdir dist_raw
+
+      # `python -m build` tags the wheel with the build interpreter
+      # (cp311-cp311-...). The client is pure-Python ctypes with no ABI
+      # dependency, so relabel to py3-none-<platform>: one wheel per OS,
+      # valid for every Python >= 3.9.
+      - name: Retag wheel py3-none-${{ matrix.plat }}
+        run: |
+          python -m wheel tags --python-tag py3 --abi-tag none \
+            --platform-tag "${{ matrix.plat }}" --remove dist_raw/*.whl
+          mkdir -p dist && mv dist_raw/*.whl dist/
+
+      # Bundle libstdc++/libgcc into the Linux wheel and confirm the tag
+      # is a valid manylinux tag.
+      - name: auditwheel repair (Linux)
+        if: matrix.container != ''
+        run: |
+          python -m pip install auditwheel
+          auditwheel repair --plat "${{ matrix.plat }}" -w dist_repaired dist/*.whl
+          rm dist/*.whl && mv dist_repaired/*.whl dist/
+
+      - name: Smoke test the wheel in a clean env
+        run: |
+          python -m venv /tmp/tw || python -m venv "$RUNNER_TEMP/tw"
+          VENV="${RUNNER_TEMP:-/tmp}/tw"
+          "$VENV/bin/python" -m pip install dist/*.whl 2>/dev/null || "$VENV/Scripts/python" -m pip install dist/*.whl
+          PY="$VENV/bin/python"; [ -x "$PY" ] || PY="$VENV/Scripts/python"
+          cd "$RUNNER_TEMP"
+          "$PY" -c "import fitsolver_client as c; r=c.solve({'items':[{'ItemCode':'A','ItemReference':'x','Width':10,'Length':10,'Depth':10,'Weight':0.0}],'boxes':[{'Reference':'B','Width':100,'Length':100,'Depth':100,'MaxWeight':50.0}]}); assert r['success']; print('ok', c.__file__)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.name }}
+          path: dist/*.whl
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip build
+      # Source-only: an sdist has no _libs/, so installing from it needs a
+      # local build/ or FITSOLVER_LIB_PATH. The wheels are the artifact to
+      # depend on; the sdist is here for completeness / `pip download`.
+      - run: python -m build --sdist python/fitsolver_client --outdir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  publish:
+    needs: [build, sdist]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment: pypi
+    permissions:
+      id-token: write   # Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist

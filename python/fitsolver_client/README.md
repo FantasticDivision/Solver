@@ -6,35 +6,66 @@ A minimal, dependency-free `ctypes` client for the FitSolver C ABI
 
 ## Install
 
+### As a normal dependency (portal team, deployments)
+
+Released wheels **vendor the native `fitsolver_lib`** inside the package,
+so there is nothing else to build or configure:
+
 ```bash
-pip install "fitsolver-client @ git+https://github.com/FantasticDivision/Solver.git@main#subdirectory=python/fitsolver_client"
+pip install fitsolver-client
 ```
 
-or, from a local checkout:
+```
+# requirements.txt / pyproject.toml
+fitsolver-client==0.1.0
+```
+
+One wheel is published per OS (Linux `manylinux_2_28`, macOS x86_64 +
+arm64, Windows x64); each is valid for every Python >= 3.9. See
+`.github/workflows/wheels.yml` for how they are built and published.
+
+### From a local checkout (multi-repo development)
 
 ```bash
-pip install -e path/to/FantasticSolver/python/fitsolver_client
+pip install -e path/to/FantasticSolver/python/fitsolver_client \
+  --config-settings editable_mode=compat
 ```
+
+`editable_mode=compat` writes a plain-path `.pth` instead of an import
+hook, so editors / Pylance resolve `import fitsolver_client` statically.
+An editable install has no vendored library; it uses your local `build/`
+(see below), so a `cmake --build` is picked up with no reinstall.
 
 ## The shared library
 
-This package does **not** vendor or build `fitsolver_lib` -- build it once
-in the FitSolver repo:
+Resolution order at the first `solve()` call:
+
+1. `FITSOLVER_LIB_PATH` -- exact path to the `.dll` / `.so` / `.dylib`.
+2. `FITSOLVER_REPO_ROOT` -- looked up under `<root>/build/`.
+3. A `build/` directory found by walking up from this package's location
+   (covers `pip install -e` from inside a FitSolver checkout).
+4. `fitsolver_client/_libs/` -- the copy vendored into a release wheel.
+
+Importing the package never fails on its own; only `solve()` does, with
+`SolverUnavailableError`, if none of the above resolve.
+
+To build the library for a local checkout:
 
 ```bash
 cmake -B build
 cmake --build build --config Release --target fitsolver_lib
 ```
 
-At call time the library is resolved in this order:
+## Building a wheel by hand
 
-1. `FITSOLVER_LIB_PATH` -- exact path to the `.dll` / `.so` / `.dylib`.
-2. `FITSOLVER_REPO_ROOT` -- looked up under `<root>/build/`.
-3. A `build/` directory found by walking up from this package's location
-   (covers `pip install -e` from inside a FitSolver checkout).
-
-If none resolve, the first `solve()` call raises `SolverUnavailableError`
-(importing the package never fails on its own).
+```bash
+cmake --build build --config Release --target fitsolver_lib
+python python/fitsolver_client/tools/vendor_lib.py --build-dir build
+python -m build --wheel python/fitsolver_client
+# optional: normalise the tag to py3-none-<platform>
+python -m wheel tags --python-tag py3 --abi-tag none \
+  --platform-tag win_amd64 --remove python/fitsolver_client/dist/*.whl
+```
 
 ## Usage
 

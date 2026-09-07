@@ -1,18 +1,19 @@
 """Minimal ctypes client for the FitSolver C ABI (fitsolver_lib).
 
-Deliberately thin: this package does not vendor or build the shared
-library itself -- build it first via CMake in the FitSolver repo:
-
-    cmake -B build
-    cmake --build build --config Release --target fitsolver_lib
+Deliberately thin: pure Python, no build step for the caller. A wheel
+built for distribution vendors the native fitsolver_lib shared library
+inside the package (fitsolver_client/_libs/), so `pip install
+fitsolver-client` is self-contained -- no CMake, no env vars.
 
 Library location is resolved in this order:
   1. FITSOLVER_LIB_PATH env var, if set -- the exact file to load.
   2. FITSOLVER_REPO_ROOT env var, if set -- look under <root>/build/.
   3. A build/ directory found by walking up from this file's own
-     location -- covers the common case of `pip install -e` from
-     inside a FitSolver checkout (e.g. as a path dependency from a
-     sibling repo).
+     location -- covers `pip install -e` from inside a FitSolver
+     checkout (multi-repo dev: the live build/ wins over any vendored
+     copy so a rebuild is picked up immediately).
+  4. The _libs/ directory vendored into this package by the wheel build
+     -- the normal path for an installed (non-editable) release.
 
 See example/python_example.py in the FitSolver repo for the original,
 single-file version of this same pattern.
@@ -52,6 +53,14 @@ def _candidate_build_dirs() -> list[Path]:
     return candidates
 
 
+def _bundled_library(filename: str) -> Path | None:
+    """The copy a distribution wheel vendors next to this module. Absent
+    in an editable/source checkout -- populated only by the wheel build
+    (see tools/vendor_lib.py + pyproject.toml package-data)."""
+    candidate = Path(__file__).resolve().parent / "_libs" / filename
+    return candidate if candidate.is_file() else None
+
+
 def _find_library() -> Path:
     explicit = os.environ.get("FITSOLVER_LIB_PATH")
     if explicit:
@@ -61,15 +70,23 @@ def _find_library() -> Path:
         raise SolverUnavailableError(f"FITSOLVER_LIB_PATH is set but not a file: {explicit}")
 
     filename = _library_filename()
+
+    # A live build/ from a dev checkout wins over the vendored copy, so a
+    # local `cmake --build` is picked up without reinstalling.
     for build_dir in _candidate_build_dirs():
         for sub in ("Release", "Debug", "."):
             candidate = build_dir / sub / filename
             if candidate.is_file():
                 return candidate
 
+    bundled = _bundled_library(filename)
+    if bundled is not None:
+        return bundled
+
     raise SolverUnavailableError(
-        f"Could not find {filename}. Build it first in the FitSolver repo "
-        "(cmake -B build && cmake --build build --config Release "
+        f"Could not find {filename}. Install a release wheel of "
+        "fitsolver-client (which vendors it), or build it in the FitSolver "
+        "repo (cmake -B build && cmake --build build --config Release "
         "--target fitsolver_lib), or set FITSOLVER_LIB_PATH to its exact "
         "location."
     )
