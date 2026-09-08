@@ -3,9 +3,13 @@ name: Wheels
 # Builds self-contained fitsolver-client wheels (the ctypes client with
 # the native fitsolver_lib vendored inside) for Linux / macOS / Windows.
 #
+#   push to main                              ->  build + smoke-test only (no publish)
 #   Actions -> Wheels -> Run workflow          ->  build only (artifacts)
 #   Actions -> Wheels -> Run workflow (TestPyPI checked)  ->  build + upload to TestPyPI
 #   git tag v0.1.0 && git push origin v0.1.0   ->  build + publish to PyPI
+#
+# PyPI is the tag-only path -- versions are immutable, so a release is a
+# deliberate `pyproject.toml` bump + vX.Y.Z tag, never automatic.
 #
 # Publishing uses Trusted Publishing (OIDC) -- no API token. One-time setup:
 #   * PyPI  -> Account -> Publishing -> add a pending publisher:
@@ -16,6 +20,10 @@ name: Wheels
 
 on:
   push:
+    # Every main commit gets the full build + clean-env smoke test. The
+    # publish jobs stay gated on `refs/tags/v*` (see their `if:`), so a
+    # branch push never uploads anything.
+    branches: [main]
     tags: ["v*"]
   pull_request:
     paths:
