@@ -207,7 +207,7 @@ flowchart TB
 | `ConcreteItem.RejectsMissingCodeAndEmptyLinkedGroup` | Required item codes and nonempty linked groups are enforced with exceptions. |
 | `ConcreteBox.CalculatesWeightCapacityAndJson` | Weight capacity subtracts empty weight and box state is serialized. |
 | `ConcreteBox.UnlimitedAndExhaustedWeightCapacities` | Unlimited boxes retain the sentinel while negative usable capacity clamps to zero. |
-| `ConcreteBox.ParsesDefaultsAndLimitedSupply` | Null optionals use box defaults, while `MaximumBoxes` creates a limited box. |
+| `ConcreteBox.ParsesDefaultsAndLimitedSupply` | A missing/null `MaxWeight` is rejected (required field); other null optionals use box defaults, while `MaximumBoxes` creates a limited box. |
 | `ConcreteBox.RejectsMissingReference` | A box without its required reference is rejected. |
 | `ItemList.SortsByLinkedGroupVolumeWeightAndCode` | Ordering applies linked-group, volume, weight and code priorities in sequence. |
 | `ItemList.MutationInvalidatesSortCacheAndRemovalUsesIdentity` | Insertion refreshes cached order and removal matches pointer identity, not equal values. |

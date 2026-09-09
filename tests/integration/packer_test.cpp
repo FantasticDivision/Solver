@@ -320,15 +320,23 @@ TEST(ConcreteBox, UnlimitedAndExhaustedWeightCapacities) {
 }
 
 TEST(ConcreteBox, ParsesDefaultsAndLimitedSupply) {
+  // MaxWeight is a required field -- explicit null or a missing key both
+  // reject the box rather than defaulting to "no weight limit" (see
+  // ConcreteBox.cpp's MakeBoxFromJson).
+  EXPECT_THROW(fitsolver::MakeBoxFromJson(
+                   {{"Reference", "A"}, {"Width", 2}, {"Length", 3}, {"Depth", 4},
+                    {"MaxWeight", nullptr}, {"BoxWeight", nullptr}, {"Active", nullptr}}),
+               std::invalid_argument);
+
   const auto plain = fitsolver::MakeBoxFromJson(
-      {{"Reference", "A"}, {"Width", 2}, {"Length", 3}, {"Depth", 4},
-       {"MaxWeight", nullptr}, {"BoxWeight", nullptr}, {"Active", nullptr}});
+      {{"Reference", "A"}, {"Width", 2}, {"Length", 3}, {"Depth", 4}, {"MaxWeight", 10},
+       {"BoxWeight", nullptr}, {"Active", nullptr}});
   EXPECT_EQ(plain->GetReference(), "A");
   EXPECT_TRUE(plain->GetActive());
-  EXPECT_FALSE(plain->HasWeightLimit());
+  EXPECT_TRUE(plain->HasWeightLimit());
 
   const auto limited = fitsolver::MakeBoxFromJson(
-      {{"Reference", "B"}, {"Width", 2}, {"Length", 3}, {"Depth", 4},
+      {{"Reference", "B"}, {"Width", 2}, {"Length", 3}, {"Depth", 4}, {"MaxWeight", 10},
        {"MaximumBoxes", 7}});
   const auto* supply = dynamic_cast<const fitsolver::LimitedSupplyBox*>(limited.get());
   ASSERT_NE(supply, nullptr);
@@ -490,7 +498,8 @@ TEST(PackedBoxList, SortsBestCandidateAndComputesWeightStatistics) {
 TEST(PackRequest, ParsesCompleteRequestAndDefaultsMissingArraysToEmpty) {
   const nlohmann::json json = {
       {"items", {{{"ItemCode", "A"}, {"Width", 1}, {"Length", 2}, {"Depth", 3}}}},
-      {"boxes", {{{"Reference", "B"}, {"Width", 4}, {"Length", 5}, {"Depth", 6}}}}};
+      {"boxes",
+       {{{"Reference", "B"}, {"Width", 4}, {"Length", 5}, {"Depth", 6}, {"MaxWeight", 10}}}}};
   const PackRequest request = PackRequest::FromJsonString(json.dump());
   EXPECT_EQ(request.GetItems().Count(), 1u);
   EXPECT_EQ(request.GetBoxes().Count(), 1u);

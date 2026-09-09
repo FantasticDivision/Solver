@@ -22,7 +22,7 @@ TEST(BoxClassTest, ConcreteBoxReportsCapacityVolumeAndJson) {
 
 TEST(BoxClassTest, LimitedSupplyFactoryPreservesQuantity) {
   const auto box = fitsolver::MakeBoxFromJson(
-      {{"Reference", "LIMITED"}, {"Width", 2}, {"Length", 3}, {"Depth", 4},
+      {{"Reference", "LIMITED"}, {"Width", 2}, {"Length", 3}, {"Depth", 4}, {"MaxWeight", 10},
        {"MaximumBoxes", 2}});
   const auto* limited = dynamic_cast<const fitsolver::LimitedSupplyBox*>(box.get());
 

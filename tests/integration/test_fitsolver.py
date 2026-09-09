@@ -179,7 +179,16 @@ def main():
     # Dict API: inactive and undersized boxes must leave the item unplaced.
     dict_result = a.pack_dicts(
         [{"ItemCode": "A", "Width": 5, "Length": 5, "Depth": 5}],
-        [{"Reference": "OFF", "Width": 100, "Length": 100, "Depth": 100, "Active": False}],
+        [
+            {
+                "Reference": "OFF",
+                "Width": 100,
+                "Length": 100,
+                "Depth": 100,
+                "MaxWeight": 100,
+                "Active": False,
+            }
+        ],
     )
     assert dict_result.success is False
     assert [item.item_code for item in dict_result.unplaced_items] == ["A"]

@@ -36,6 +36,9 @@ set(FITSOLVER_CORE_SOURCES
   src/DefaultItemSorter.cpp
   src/DefaultBoxSorter.cpp
   src/DefaultPackedBoxSorter.cpp
+  src/PackingEntropy.cpp
+  src/EntropyItemSorter.cpp
+  src/EntropyBoxSorter.cpp
   src/ItemList.cpp
   src/BoxList.cpp
   src/OrientatedItem.cpp
@@ -117,6 +120,7 @@ if(FITSOLVER_BUILD_TESTS)
     tests/unit/packed_classes_test.cpp
     tests/unit/request_classes_test.cpp
     tests/unit/packing_classes_test.cpp
+    tests/unit/entropy_test.cpp
   )
   target_link_libraries(fitsolver_tests
     PRIVATE

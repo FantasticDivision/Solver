@@ -20,7 +20,8 @@ using fitsolver::test::MakeItem;
 TEST(PackRequestClassTest, ParsesItemsAndBoxes) {
   const auto request = PackRequest::FromJson({
       {"items", {{{"ItemCode", "A"}, {"Width", 1}, {"Length", 2}, {"Depth", 3}}}},
-      {"boxes", {{{"Reference", "B"}, {"Width", 4}, {"Length", 5}, {"Depth", 6}}}}});
+      {"boxes",
+       {{{"Reference", "B"}, {"Width", 4}, {"Length", 5}, {"Depth", 6}, {"MaxWeight", 10}}}}});
 
   EXPECT_EQ(request.GetItems().Count(), 1u);
   EXPECT_EQ(request.GetBoxes().Count(), 1u);
