@@ -1,27 +1,46 @@
 name: Wheels
 
 # Builds self-contained fitsolver-client wheels (the ctypes client with
-# the native fitsolver_lib vendored inside) for Linux / macOS / Windows,
-# and publishes them to PyPI on a version tag.
+# the native fitsolver_lib vendored inside) for Linux / macOS / Windows.
 #
-#   git tag v0.1.0 && git push origin v0.1.0   ->  build + publish
-#   Actions -> Wheels -> Run workflow           ->  build only (artifacts)
+#   push to main                              ->  build + smoke-test only (no publish)
+#   Actions -> Wheels -> Run workflow          ->  build only (artifacts)
+#   Actions -> Wheels -> Run workflow (TestPyPI checked)  ->  build + upload to TestPyPI
+#   git tag v0.1.0 && git push origin v0.1.0   ->  build + publish to PyPI
 #
-# PyPI publishing uses Trusted Publishing (OIDC): configure the project on
-# PyPI once (pypi.org -> your project -> Publishing) to trust
-#   owner: FantasticDivision   repo: Solver   workflow: wheels.yml
-# No API token / secret required after that.
+# PyPI is the tag-only path -- versions are immutable, so a release is a
+# deliberate `pyproject.toml` bump + vX.Y.Z tag, never automatic.
+#
+# Publishing uses Trusted Publishing (OIDC) -- no API token. One-time setup:
+#   * PyPI  -> Account -> Publishing -> add a pending publisher:
+#       project fitsolver-client, owner FantasticDivision, repo Solver,
+#       workflow wheels.yml, environment pypi
+#   * (optional) TestPyPI -> same, environment testpypi
+#   * GitHub repo -> Settings -> Environments -> create "pypi" (+ "testpypi")
 
 on:
   push:
+    # Every main commit gets the full build + clean-env smoke test. The
+    # publish jobs stay gated on `refs/tags/v*` (see their `if:`), so a
+    # branch push never uploads anything.
+    branches: [main]
     tags: ["v*"]
   pull_request:
     paths:
       - "python/fitsolver_client/**"
-      - "src/abi.cpp"
+      - "src/**"
       - "CMakeLists.txt"
       - ".github/workflows/wheels.yml"
   workflow_dispatch:
+    inputs:
+      testpypi:
+        description: "Upload the built wheels to TestPyPI"
+        type: boolean
+        default: false
+
+concurrency:
+  group: wheels-${{ github.ref }}
+  cancel-in-progress: true
 
 defaults:
   run:
@@ -32,24 +51,27 @@ jobs:
     name: wheel (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: linux-x86_64, os: ubuntu-latest, container: "quay.io/pypa/manylinux_2_28_x86_64", plat: manylinux_2_28_x86_64 }
-          - { name: macos-x86_64, os: macos-13,      plat: macosx_13_0_x86_64 }
-          - { name: macos-arm64,  os: macos-14,      plat: macosx_14_0_arm64 }
-          - { name: windows-x64,  os: windows-latest, plat: win_amd64 }
+          - { name: linux-x86_64,     os: ubuntu-latest,  container: "quay.io/pypa/manylinux_2_28_x86_64", plat: manylinux_2_28_x86_64 }
+          # One arm64 runner (macos-13 Intel runners are retired); the
+          # dylib is built universal2 below, so this wheel serves Intel
+          # Macs too.
+          - { name: macos-universal2, os: macos-14,        plat: macosx_11_0_universal2 }
+          - { name: windows-x64,      os: windows-latest,  plat: win_amd64 }
 
     steps:
       - uses: actions/checkout@v4
 
-      # The manylinux container ships several CPythons under /opt/python
-      # but not on PATH, and no "python3". Everywhere else, use setup-python.
+      # The manylinux image ships CPythons under /opt/python but not on
+      # PATH; everywhere else use setup-python.
       - name: Select Python (manylinux container)
         if: matrix.container != ''
         run: echo "/opt/python/cp311-cp311/bin" >> "$GITHUB_PATH"
-
       - name: Set up Python
         if: matrix.container == ''
         uses: actions/setup-python@v5
@@ -57,19 +79,19 @@ jobs:
           python-version: "3.11"
 
       - name: Install build tooling
-        run: python -m pip install --upgrade pip build wheel
-
-      # Ninja + a CMake new enough for the project. The manylinux image has
-      # a modern GCC (devtoolset) already; macOS/Windows runners have a
-      # compiler and CMake preinstalled.
-      - name: Install CMake + Ninja (manylinux container)
-        if: matrix.container != ''
-        run: python -m pip install cmake ninja
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build wheel
+          # manylinux image has GCC but not cmake/ninja; runners have both.
+          if [ -n "${{ matrix.container }}" ]; then python -m pip install cmake ninja; fi
 
       - name: Build fitsolver_lib
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release \
-            -DFITSOLVER_BUILD_TESTS=OFF -DFITSOLVER_BUILD_PYTHON=OFF
+          args=(-B build -DCMAKE_BUILD_TYPE=Release
+                -DFITSOLVER_BUILD_TESTS=OFF -DFITSOLVER_BUILD_PYTHON=OFF)
+          # Fat binary so the single macOS wheel covers arm64 + x86_64.
+          if [ "$RUNNER_OS" = "macOS" ]; then args+=("-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"); fi
+          cmake "${args[@]}"
           cmake --build build --config Release --target fitsolver_lib
 
       - name: Vendor the built library into the package
@@ -78,18 +100,22 @@ jobs:
       - name: Build wheel
         run: python -m build --wheel python/fitsolver_client --outdir dist_raw
 
-      # `python -m build` tags the wheel with the build interpreter
-      # (cp311-cp311-...). The client is pure-Python ctypes with no ABI
-      # dependency, so relabel to py3-none-<platform>: one wheel per OS,
-      # valid for every Python >= 3.9.
-      - name: Retag wheel py3-none-${{ matrix.plat }}
+      # build tags the wheel for the build interpreter (cp311-cp311-...).
+      # The client is pure ctypes -- no ABI dependency -- so relabel the
+      # python/abi part to py3-none. Platform part: set it directly off
+      # the runner (mac/windows), or leave it linux_x86_64 for auditwheel
+      # to promote to a real manylinux tag.
+      - name: Retag py3-none
         run: |
-          python -m wheel tags --python-tag py3 --abi-tag none \
-            --platform-tag "${{ matrix.plat }}" --remove dist_raw/*.whl
-          mkdir -p dist && mv dist_raw/*.whl dist/
+          mkdir -p dist
+          if [ -n "${{ matrix.container }}" ]; then
+            python -m wheel tags --python-tag py3 --abi-tag none --remove dist_raw/*.whl
+          else
+            python -m wheel tags --python-tag py3 --abi-tag none \
+              --platform-tag "${{ matrix.plat }}" --remove dist_raw/*.whl
+          fi
+          mv dist_raw/*.whl dist/
 
-      # Bundle libstdc++/libgcc into the Linux wheel and confirm the tag
-      # is a valid manylinux tag.
       - name: auditwheel repair (Linux)
         if: matrix.container != ''
         run: |
@@ -97,14 +123,32 @@ jobs:
           auditwheel repair --plat "${{ matrix.plat }}" -w dist_repaired dist/*.whl
           rm dist/*.whl && mv dist_repaired/*.whl dist/
 
-      - name: Smoke test the wheel in a clean env
+      - name: delocate (macOS)
+        if: runner.os == 'macOS'
         run: |
-          python -m venv /tmp/tw || python -m venv "$RUNNER_TEMP/tw"
-          VENV="${RUNNER_TEMP:-/tmp}/tw"
-          "$VENV/bin/python" -m pip install dist/*.whl 2>/dev/null || "$VENV/Scripts/python" -m pip install dist/*.whl
-          PY="$VENV/bin/python"; [ -x "$PY" ] || PY="$VENV/Scripts/python"
+          python -m pip install delocate
+          delocate-wheel -v dist/*.whl
+
+      - name: Smoke test the wheel in a clean venv
+        run: |
+          python -m venv "$RUNNER_TEMP/tw"
+          PY="$RUNNER_TEMP/tw/bin/python"; [ -x "$PY" ] || PY="$RUNNER_TEMP/tw/Scripts/python"
+          "$PY" -m pip install --quiet dist/*.whl
           cd "$RUNNER_TEMP"
-          "$PY" -c "import fitsolver_client as c; r=c.solve({'items':[{'ItemCode':'A','ItemReference':'x','Width':10,'Length':10,'Depth':10,'Weight':0.0}],'boxes':[{'Reference':'B','Width':100,'Length':100,'Depth':100,'MaxWeight':50.0}]}); assert r['success']; print('ok', c.__file__)"
+          "$PY" - <<'EOF'
+          import fitsolver_client as c
+          r = c.solve({
+            "items": [{"ItemCode": "A", "ItemReference": "x", "Width": 10, "Length": 10, "Depth": 10, "Weight": 0.0}],
+            "boxes": [{"Reference": "B", "Width": 100, "Length": 100, "Depth": 100, "MaxWeight": 50.0}],
+          })
+          assert r["success"], r
+          print("ok:", c.__file__)
+          EOF
+
+      - name: Check metadata
+        run: |
+          python -m pip install twine
+          python -m twine check dist/*.whl
 
       - uses: actions/upload-artifact@v4
         with:
@@ -118,28 +162,43 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: python -m pip install --upgrade pip build
-      # Source-only: an sdist has no _libs/, so installing from it needs a
-      # local build/ or FITSOLVER_LIB_PATH. The wheels are the artifact to
-      # depend on; the sdist is here for completeness / `pip download`.
-      - run: python -m build --sdist python/fitsolver_client --outdir dist
+      - run: |
+          python -m pip install --upgrade pip build twine
+          # Source-only: an sdist has no _libs/, so installing it needs a
+          # local build/ or FITSOLVER_LIB_PATH. Wheels are what consumers
+          # depend on; the sdist is here for completeness / `pip download`.
+          python -m build --sdist python/fitsolver_client --outdir dist
+          python -m twine check dist/*.tar.gz
       - uses: actions/upload-artifact@v4
         with:
           name: sdist
           path: dist/*.tar.gz
 
-  publish:
+  publish-pypi:
     needs: [build, sdist]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     environment: pypi
     permissions:
-      id-token: write   # Trusted Publishing
+      id-token: write
     steps:
       - uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
+        with: { path: dist, merge-multiple: true }
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
+
+  publish-testpypi:
+    needs: [build, sdist]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && inputs.testpypi
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          repository-url: https://test.pypi.org/legacy/

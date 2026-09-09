@@ -43,8 +43,12 @@ RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
 # ---------- Runtime stage ----------
 FROM ubuntu:24.04 AS runtime
 
+# libssl3t64, not libssl3: Ubuntu 24.04's 64-bit time_t transition
+# renamed the OpenSSL 3 runtime package. `libssl3` does not resolve on
+# noble ("Unable to locate package"), which is what was failing the
+# image build on every commit.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 \
+    libssl3t64 \
     zlib1g \
     libuuid1 \
     libjsoncpp25 \
