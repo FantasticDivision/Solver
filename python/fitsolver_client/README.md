@@ -17,7 +17,7 @@ pip install fitsolver-client
 
 ```
 # requirements.txt / pyproject.toml
-fitsolver-client==0.1.0
+fitsolver-client>=0.2.0
 ```
 
 One wheel is published per OS (Linux `manylinux_2_28`, macOS x86_64 +
@@ -66,6 +66,63 @@ python -m build --wheel python/fitsolver_client
 python -m wheel tags --python-tag py3 --abi-tag none \
   --platform-tag win_amd64 --remove python/fitsolver_client/dist/*.whl
 ```
+
+## Releasing a new version to PyPI
+
+PyPI versions are immutable, so a release is always a deliberate version
+bump + tag. Publishing is automated (`.github/workflows/wheels.yml`) and
+uses **Trusted Publishing** (OIDC) -- no API token. Do it whenever the
+native `fitsolver_lib` behaviour changes (the wheels vendor the compiled
+library) or the client code itself changes.
+
+1. **Bump the version.** Edit `version` in
+   `python/fitsolver_client/pyproject.toml` (semver: patch for a
+   bug-fix-only lib rebuild, minor for new/changed packing behaviour,
+   major for a breaking request/response change). Note the same version
+   in this README's install snippet.
+
+2. **Commit it on `main`.**
+
+   ```bash
+   git add python/fitsolver_client/pyproject.toml python/fitsolver_client/README.md
+   git commit -m "fitsolver-client: release vX.Y.Z"
+   git push origin main
+   ```
+
+   The push runs the wheels workflow in build-and-smoke-test-only mode
+   (no upload) -- check it is green before tagging.
+
+3. **(Optional) dry-run to TestPyPI.** GitHub -> Actions -> *Wheels* ->
+   *Run workflow*, tick **"Upload the built wheels to TestPyPI"**. Then
+   `pip install -i https://test.pypi.org/simple/ fitsolver-client==X.Y.Z`
+   in a scratch venv and confirm `import fitsolver_client; solve(...)`
+   works.
+
+4. **Tag and push the tag -- this is what publishes to PyPI.**
+
+   ```bash
+   git tag vX.Y.Z          # tag name must match the pyproject version, with a leading v
+   git push origin vX.Y.Z
+   ```
+
+   The tag push triggers the full matrix: per-OS wheels (Linux
+   `manylinux_2_28`, macOS `universal2`, Windows x64) + an sdist, each
+   smoke-tested in a clean venv, then `publish-pypi` uploads them.
+
+5. **Verify.** `pip install fitsolver-client==X.Y.Z` in a fresh venv;
+   check https://pypi.org/project/fitsolver-client/ shows the new files.
+
+6. **Bump consumers.** Update `fitsolver-client>=X.Y.Z` in
+   `fantastic-portal/backend/pyproject.toml` (and anywhere else it is
+   pinned).
+
+### First-time setup (already done for this project)
+
+On PyPI: *Account -> Publishing -> add a pending publisher* -- project
+`fitsolver-client`, owner `FantasticDivision`, repo `Solver`, workflow
+`wheels.yml`, environment `pypi`. Create a matching `pypi` environment
+under the GitHub repo's *Settings -> Environments* (and `testpypi` for
+the dry-run path). No secrets are stored.
 
 ## Usage
 
