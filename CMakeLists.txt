@@ -124,15 +124,9 @@ if(FITSOLVER_BUILD_TESTS)
       gtest_main
   )
 
-  # Registers the test binary with CTest, which is what `ctest` in the
-  # CI workflow actually runs. A plain add_test() (rather than
-  # gtest_discover_tests(), which runs the freshly-built binary as a build
-  # step just to enumerate individual test names) keeps the build itself
-  # from depending on being able to execute binaries in restricted/
-  # sandboxed build environments. `ctest` sees one test here that runs the
-  # whole suite; run the binary directly (or `ctest -V`) to see each
-  # individual TEST() case's own pass/fail.
-  add_test(NAME fitsolver_tests COMMAND fitsolver_tests)
+  # Discover individual cases when CTest runs, without executing at build time.
+  include(GoogleTest)
+  gtest_discover_tests(fitsolver_tests DISCOVERY_MODE PRE_TEST)
 endif()
 
 # --- Coverage-guided fuzzing (Clang/libFuzzer + sanitizers) -------------
