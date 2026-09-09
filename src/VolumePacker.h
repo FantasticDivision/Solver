@@ -56,9 +56,13 @@ class VolumePacker {
 
   std::optional<OrientatedItem> BestFittingOrientation(const ItemPtr& item, double width_left,
                                                         double length_left, double depth_left) const;
+  // `placed` is every item already in this box: a candidate spot is only
+  // accepted if that footprint is supported from below (box floor or the
+  // top of another item) -- no floating placements a worker couldn't build.
   std::optional<PackedItem> TryPlaceItem(const ItemPtr& item, ShelfCursor& cursor, double region_x,
                                           double region_y, double region_z, double region_width,
-                                          double region_length, double region_depth) const;
+                                          double region_length, double region_depth,
+                                          const std::vector<PackedItem>& placed) const;
 
   BoxPtr box_;
   VoidFinder void_finder_;

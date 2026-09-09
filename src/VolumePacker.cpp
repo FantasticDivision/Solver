@@ -1,10 +1,51 @@
 #include "VolumePacker.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "WorkingVolume.h"
 
 namespace fitsolver {
+
+namespace {
+
+// Physical-packability constraint. An item can only be placed where a
+// worker could actually set it down: on the box floor, or resting on the
+// top face(s) of items already in the box. Anything less than
+// kMinSupportRatio of its base area supported would leave it tipping or
+// floating in mid-air, so the placement is rejected and the item is left
+// for another box / another spot.
+constexpr double kSupportEps = 1e-6;
+constexpr double kMinSupportRatio = 0.75;
+
+// Fraction (0..1) of the (x, y, w, l) footprint at height z that rests
+// on the box floor or on the top face of an already-placed item.
+double SupportedFraction(double x, double y, double w, double l, double z,
+                          const std::vector<PackedItem>& placed) {
+  if (z <= kSupportEps) return 1.0;  // sitting on the box floor
+  const double base_area = w * l;
+  if (base_area <= kSupportEps) return 1.0;
+
+  double covered = 0.0;
+  for (const auto& other : placed) {
+    // Only items whose top face is exactly at this height can support it.
+    if (std::abs((other.GetZ() + other.GetDepth()) - z) > kSupportEps) continue;
+
+    const double ox = std::max(x, other.GetX());
+    const double oy = std::max(y, other.GetY());
+    const double ex = std::min(x + w, other.GetX() + other.GetWidth());
+    const double ey = std::min(y + l, other.GetY() + other.GetLength());
+    if (ex > ox && ey > oy) covered += (ex - ox) * (ey - oy);
+  }
+  return covered / base_area;
+}
+
+bool HasFloorSupport(double x, double y, double w, double l, double z,
+                      const std::vector<PackedItem>& placed) {
+  return SupportedFraction(x, y, w, l, z, placed) + kSupportEps >= kMinSupportRatio;
+}
+
+}  // namespace
 
 VolumePacker::VolumePacker(BoxPtr box) : box_(std::move(box)) {}
 
@@ -24,6 +65,24 @@ PackedBox VolumePacker::PackInternal(const std::vector<ItemPtr>& sorted_items,
   if (depth < kMaxVoidFillDepth) {
     FillVoids(result, sorted_items, placed, weight_capacity, weight_used, depth);
   }
+
+  // Nested WorkingVolume packs get merged + re-offset by the caller, so
+  // only reorder once, at the top level: emit the placements strictly
+  // bottom layer first, then front-to-back, then left-to-right, so the
+  // response reads as a sequence a worker can physically follow (never
+  // "place this one after the one it sits under").
+  if (depth == 0 && result.GetItems().Count() > 1) {
+    std::vector<PackedItem> ordered = result.GetItems().ToVector();
+    std::stable_sort(ordered.begin(), ordered.end(),
+                     [](const PackedItem& a, const PackedItem& b) {
+                       if (std::abs(a.GetZ() - b.GetZ()) > kSupportEps) return a.GetZ() < b.GetZ();
+                       if (std::abs(a.GetY() - b.GetY()) > kSupportEps) return a.GetY() < b.GetY();
+                       return a.GetX() < b.GetX();
+                     });
+    PackedBox reordered(box_);
+    for (auto& item : ordered) reordered.AddItem(std::move(item));
+    return reordered;
+  }
   return result;
 }
 
@@ -40,7 +99,7 @@ void VolumePacker::PackRegion(double origin_x, double origin_y, double origin_z,
     if (!weight_unlimited && weight_used + item->GetWeight() > weight_capacity) continue;
 
     if (auto placed_item = TryPlaceItem(item, cursor, origin_x, origin_y, origin_z, region_width,
-                                         region_length, region_depth)) {
+                                         region_length, region_depth, out.GetItems().ToVector())) {
       weight_used += item->GetWeight();
       placed.insert(item.get());
       out.AddItem(std::move(*placed_item));
@@ -73,6 +132,15 @@ void VolumePacker::FillVoids(PackedBox& out, const std::vector<ItemPtr>& sorted_
 
     for (const auto& void_space : voids) {
       if (leftover.empty()) break;
+
+      // A void with nothing under its floor can't be packed by hand --
+      // its contents would hang in the air. Only fill voids that sit on
+      // the box floor or on already-placed items.
+      if (void_space.GetZ() > kSupportEps &&
+          !HasFloorSupport(void_space.GetX(), void_space.GetY(), void_space.GetWidth(),
+                            void_space.GetLength(), void_space.GetZ(), out.GetItems().ToVector())) {
+        continue;
+      }
 
       // Pack this void as if it were its own (weightless, since weight
       // is tracked at this level) little box, using a fresh
@@ -135,8 +203,8 @@ std::optional<OrientatedItem> VolumePacker::BestFittingOrientation(const ItemPtr
 std::optional<PackedItem> VolumePacker::TryPlaceItem(const ItemPtr& item, ShelfCursor& cursor,
                                                       double region_x, double region_y,
                                                       double region_z, double region_width,
-                                                      double region_length,
-                                                      double region_depth) const {
+                                                      double region_length, double region_depth,
+                                                      const std::vector<PackedItem>& placed) const {
   const double region_end_x = region_x + region_width;
   const double region_end_y = region_y + region_length;
   const double region_end_z = region_z + region_depth;
@@ -145,11 +213,14 @@ std::optional<PackedItem> VolumePacker::TryPlaceItem(const ItemPtr& item, ShelfC
   if (auto orientation =
           BestFittingOrientation(item, region_end_x - cursor.x, region_end_y - cursor.y,
                                   region_end_z - cursor.z)) {
-    PackedItem placed(*orientation, cursor.x, cursor.y, cursor.z);
-    cursor.x += orientation->GetWidth();
-    cursor.row_length = std::max(cursor.row_length, orientation->GetLength());
-    cursor.layer_depth = std::max(cursor.layer_depth, orientation->GetDepth());
-    return placed;
+    if (HasFloorSupport(cursor.x, cursor.y, orientation->GetWidth(), orientation->GetLength(),
+                        cursor.z, placed)) {
+      PackedItem placed_item(*orientation, cursor.x, cursor.y, cursor.z);
+      cursor.x += orientation->GetWidth();
+      cursor.row_length = std::max(cursor.row_length, orientation->GetLength());
+      cursor.layer_depth = std::max(cursor.layer_depth, orientation->GetDepth());
+      return placed_item;
+    }
   }
 
   // 2. New row within the same layer.
@@ -157,14 +228,17 @@ std::optional<PackedItem> VolumePacker::TryPlaceItem(const ItemPtr& item, ShelfC
   if (new_y < region_end_y) {
     if (auto orientation = BestFittingOrientation(item, region_width, region_end_y - new_y,
                                                     region_end_z - cursor.z)) {
-      cursor.y = new_y;
-      cursor.x = region_x;
-      cursor.row_length = 0.0;
-      PackedItem placed(*orientation, cursor.x, cursor.y, cursor.z);
-      cursor.x += orientation->GetWidth();
-      cursor.row_length = orientation->GetLength();
-      cursor.layer_depth = std::max(cursor.layer_depth, orientation->GetDepth());
-      return placed;
+      if (HasFloorSupport(region_x, new_y, orientation->GetWidth(), orientation->GetLength(),
+                          cursor.z, placed)) {
+        cursor.y = new_y;
+        cursor.x = region_x;
+        cursor.row_length = 0.0;
+        PackedItem placed_item(*orientation, cursor.x, cursor.y, cursor.z);
+        cursor.x += orientation->GetWidth();
+        cursor.row_length = orientation->GetLength();
+        cursor.layer_depth = std::max(cursor.layer_depth, orientation->GetDepth());
+        return placed_item;
+      }
     }
   }
 
@@ -173,16 +247,19 @@ std::optional<PackedItem> VolumePacker::TryPlaceItem(const ItemPtr& item, ShelfC
   if (new_z < region_end_z) {
     if (auto orientation =
             BestFittingOrientation(item, region_width, region_length, region_end_z - new_z)) {
-      cursor.z = new_z;
-      cursor.x = region_x;
-      cursor.y = region_y;
-      cursor.row_length = 0.0;
-      cursor.layer_depth = 0.0;
-      PackedItem placed(*orientation, cursor.x, cursor.y, cursor.z);
-      cursor.x += orientation->GetWidth();
-      cursor.row_length = orientation->GetLength();
-      cursor.layer_depth = orientation->GetDepth();
-      return placed;
+      if (HasFloorSupport(region_x, region_y, orientation->GetWidth(), orientation->GetLength(),
+                          new_z, placed)) {
+        cursor.z = new_z;
+        cursor.x = region_x;
+        cursor.y = region_y;
+        cursor.row_length = 0.0;
+        cursor.layer_depth = 0.0;
+        PackedItem placed_item(*orientation, cursor.x, cursor.y, cursor.z);
+        cursor.x += orientation->GetWidth();
+        cursor.row_length = orientation->GetLength();
+        cursor.layer_depth = orientation->GetDepth();
+        return placed_item;
+      }
     }
   }
 

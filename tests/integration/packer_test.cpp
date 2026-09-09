@@ -561,6 +561,57 @@ TEST(WeightRedistributor, EmptyAndAlreadyBalancedResultsRemainStable) {
   EXPECT_DOUBLE_EQ(result.GetWeightVariance(), 0.0);
 }
 
+TEST(VolumePacker, EveryPlacedItemRestsOnTheFloorOrOnItemsBelow) {
+  // A/B fill the bottom half in two shelves; C would naively land in the
+  // air beside B on a fresh layer. The support check must instead push it
+  // down into the floor-level gap to the right of A (or leave it out).
+  ItemList items;
+  items.Insert(MakeItem("A", 60, 100, 50, 1));
+  items.Insert(MakeItem("B", 60, 100, 50, 1));
+  items.Insert(MakeItem("C", 30, 30, 30, 1));
+  items.Insert(MakeItem("D", 25, 25, 25, 1));
+  items.Insert(MakeItem("E", 25, 25, 25, 1));
+
+  const fitsolver::PackedBox packed =
+      fitsolver::VolumePacker(MakeBox("BOX", 100, 100, 100)).Pack(items);
+  const auto& placed = packed.GetItems().ToVector();
+  ASSERT_FALSE(placed.empty());
+
+  for (const auto& it : placed) {
+    if (it.GetZ() <= 1e-6) continue;  // resting on the box floor
+    const double base = it.GetWidth() * it.GetLength();
+    double covered = 0.0;
+    for (const auto& other : placed) {
+      if (&other == &it) continue;
+      if (std::abs((other.GetZ() + other.GetDepth()) - it.GetZ()) > 1e-6) continue;
+      const double ox = std::max(it.GetX(), other.GetX());
+      const double oy = std::max(it.GetY(), other.GetY());
+      const double ex = std::min(it.GetX() + it.GetWidth(), other.GetX() + other.GetWidth());
+      const double ey = std::min(it.GetY() + it.GetLength(), other.GetY() + other.GetLength());
+      if (ex > ox && ey > oy) covered += (ex - ox) * (ey - oy);
+    }
+    EXPECT_GE(covered / base, 0.75 - 1e-6)
+        << it.GetItem()->GetItemCode() << " floats at z=" << it.GetZ();
+  }
+}
+
+TEST(VolumePacker, PlacementListIsBottomUp) {
+  // More items than fit in one layer, so the pack spans several layers;
+  // the emitted order must never step down in z (a build sequence a
+  // worker can actually follow).
+  ItemList items;
+  for (int i = 0; i < 12; ++i) items.Insert(MakeItem("I" + std::to_string(i), 25, 25, 25, 1));
+
+  const fitsolver::PackedBox packed =
+      fitsolver::VolumePacker(MakeBox("BOX", 60, 60, 60)).Pack(items);
+  const auto& placed = packed.GetItems().ToVector();
+  ASSERT_GT(placed.size(), 1u);
+  for (std::size_t i = 1; i < placed.size(); ++i) {
+    EXPECT_GE(placed[i].GetZ() + 1e-6, placed[i - 1].GetZ())
+        << "placement " << i << " drops below the previous one";
+  }
+}
+
 TEST(VolumePacker, WrapsAcrossRowsAndLayersWithoutOverlap) {
   ItemList items;
   for (int i = 0; i < 8; ++i) items.Insert(MakeItem(std::to_string(i), 5, 5, 5, 1));
