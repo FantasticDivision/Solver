@@ -33,17 +33,35 @@ void VolumePacker::PackRegion(double origin_x, double origin_y, double origin_z,
                                double& weight_used, std::unordered_set<const Item*>& placed,
                                PackedBox& out) const {
   const bool weight_unlimited = weight_capacity < 0.0;
-  ShelfCursor cursor{origin_x, origin_y, origin_z, 0.0, 0.0};
+  const double region_end_x = origin_x + region_width;
+  const double region_end_y = origin_y + region_length;
+  const double region_end_z = origin_z + region_depth;
 
-  for (const auto& item : sorted_items) {
-    if (placed.count(item.get()) > 0) continue;
-    if (!weight_unlimited && weight_used + item->GetWeight() > weight_capacity) continue;
+  HeightMap height_map(origin_z);
 
-    if (auto placed_item = TryPlaceItem(item, cursor, origin_x, origin_y, origin_z, region_width,
-                                         region_length, region_depth)) {
-      weight_used += item->GetWeight();
-      placed.insert(item.get());
-      out.AddItem(std::move(*placed_item));
+  // Repeated full sweeps over the region. Each sweep can stack items on
+  // top of whatever earlier sweeps left behind, because every item's Z
+  // is looked up per-footprint from height_map rather than assumed
+  // uniform across a "layer" -- this is what prevents items from
+  // floating above shorter items placed earlier in the same layer.
+  // Stops once a full sweep places nothing (guaranteed to terminate:
+  // the unplaced set only shrinks, never grows).
+  bool progress = true;
+  while (progress) {
+    progress = false;
+    ShelfCursor cursor{origin_x, origin_y, 0.0};
+
+    for (const auto& item : sorted_items) {
+      if (placed.count(item.get()) > 0) continue;
+      if (!weight_unlimited && weight_used + item->GetWeight() > weight_capacity) continue;
+
+      if (auto placed_item = TryPlaceItem(item, cursor, origin_x, region_end_x, region_end_y,
+                                           region_end_z, height_map)) {
+        weight_used += item->GetWeight();
+        placed.insert(item.get());
+        out.AddItem(std::move(*placed_item));
+        progress = true;
+      }
     }
   }
 }
@@ -107,19 +125,25 @@ void VolumePacker::FillVoids(PackedBox& out, const std::vector<ItemPtr>& sorted_
   }
 }
 
-std::optional<OrientatedItem> VolumePacker::BestFittingOrientation(const ItemPtr& item,
-                                                                    double width_left,
+std::optional<OrientatedItem> VolumePacker::BestFittingOrientation(const ItemPtr& item, double x,
+                                                                    double y, double width_left,
                                                                     double length_left,
-                                                                    double depth_left) const {
+                                                                    double region_end_z,
+                                                                    const HeightMap& height_map) const {
   std::optional<OrientatedItem> best;
   double best_width_gap = 0.0;
   double best_length_gap = 0.0;
 
   for (auto& orientation : GenerateOrientations(item)) {
-    if (orientation.GetWidth() > width_left || orientation.GetLength() > length_left ||
-        orientation.GetDepth() > depth_left) {
-      continue;
-    }
+    if (orientation.GetWidth() > width_left || orientation.GetLength() > length_left) continue;
+
+    // Real height under THIS orientation's footprint -- different
+    // orientations can have different footprints, and therefore
+    // different real heights beneath them, so this has to be checked
+    // per-candidate rather than assumed from a single region-wide value.
+    const double z = height_map.HeightUnder(x, y, orientation.GetWidth(), orientation.GetLength());
+    if (z + orientation.GetDepth() > region_end_z) continue;  // doesn't fit vertically here
+
     const double width_gap = width_left - orientation.GetWidth();
     const double length_gap = length_left - orientation.GetLength();
     if (!best.has_value() || width_gap < best_width_gap ||
@@ -133,59 +157,44 @@ std::optional<OrientatedItem> VolumePacker::BestFittingOrientation(const ItemPtr
 }
 
 std::optional<PackedItem> VolumePacker::TryPlaceItem(const ItemPtr& item, ShelfCursor& cursor,
-                                                      double region_x, double region_y,
-                                                      double region_z, double region_width,
-                                                      double region_length,
-                                                      double region_depth) const {
-  const double region_end_x = region_x + region_width;
-  const double region_end_y = region_y + region_length;
-  const double region_end_z = region_z + region_depth;
-
+                                                      double region_x, double region_end_x,
+                                                      double region_end_y, double region_end_z,
+                                                      HeightMap& height_map) const {
   // 1. Current row.
-  if (auto orientation =
-          BestFittingOrientation(item, region_end_x - cursor.x, region_end_y - cursor.y,
-                                  region_end_z - cursor.z)) {
-    PackedItem placed(*orientation, cursor.x, cursor.y, cursor.z);
+  if (auto orientation = BestFittingOrientation(item, cursor.x, cursor.y, region_end_x - cursor.x,
+                                                 region_end_y - cursor.y, region_end_z, height_map)) {
+    const double z =
+        height_map.HeightUnder(cursor.x, cursor.y, orientation->GetWidth(), orientation->GetLength());
+    PackedItem placed_item(*orientation, cursor.x, cursor.y, z);
+    height_map.Add(cursor.x, cursor.y, orientation->GetWidth(), orientation->GetLength(),
+                    z + orientation->GetDepth());
     cursor.x += orientation->GetWidth();
     cursor.row_length = std::max(cursor.row_length, orientation->GetLength());
-    cursor.layer_depth = std::max(cursor.layer_depth, orientation->GetDepth());
-    return placed;
+    return placed_item;
   }
 
-  // 2. New row within the same layer.
+  // 2. New row within the region (wrap X back to the start, advance Y).
   const double new_y = cursor.y + cursor.row_length;
   if (new_y < region_end_y) {
-    if (auto orientation = BestFittingOrientation(item, region_width, region_end_y - new_y,
-                                                    region_end_z - cursor.z)) {
+    if (auto orientation = BestFittingOrientation(item, region_x, new_y, region_end_x - region_x,
+                                                   region_end_y - new_y, region_end_z, height_map)) {
       cursor.y = new_y;
       cursor.x = region_x;
       cursor.row_length = 0.0;
-      PackedItem placed(*orientation, cursor.x, cursor.y, cursor.z);
+      const double z =
+          height_map.HeightUnder(cursor.x, cursor.y, orientation->GetWidth(), orientation->GetLength());
+      PackedItem placed_item(*orientation, cursor.x, cursor.y, z);
+      height_map.Add(cursor.x, cursor.y, orientation->GetWidth(), orientation->GetLength(),
+                      z + orientation->GetDepth());
       cursor.x += orientation->GetWidth();
       cursor.row_length = orientation->GetLength();
-      cursor.layer_depth = std::max(cursor.layer_depth, orientation->GetDepth());
-      return placed;
+      return placed_item;
     }
   }
 
-  // 3. New layer stacked on top.
-  const double new_z = cursor.z + cursor.layer_depth;
-  if (new_z < region_end_z) {
-    if (auto orientation =
-            BestFittingOrientation(item, region_width, region_length, region_end_z - new_z)) {
-      cursor.z = new_z;
-      cursor.x = region_x;
-      cursor.y = region_y;
-      cursor.row_length = 0.0;
-      cursor.layer_depth = 0.0;
-      PackedItem placed(*orientation, cursor.x, cursor.y, cursor.z);
-      cursor.x += orientation->GetWidth();
-      cursor.row_length = orientation->GetLength();
-      cursor.layer_depth = orientation->GetDepth();
-      return placed;
-    }
-  }
-
+  // No "new layer" branch here anymore -- PackRegion's outer sweep loop
+  // handles starting over at the region floor and stacking on top of
+  // whatever height_map now reports, which is what fixes floating items.
   return std::nullopt;
 }
 
