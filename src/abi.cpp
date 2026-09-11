@@ -19,7 +19,7 @@ char* CopyToCString(const std::string& text) {
   return buffer;
 }
 
-}  // namespace
+} 
 
 extern "C" char* fitsolver_solve(const char* request_json) {
   try {

@@ -40,7 +40,6 @@ class ConcreteBox : public Box {
 class ConcreteLimitedSupplyBox : public LimitedSupplyBox {
  public:
   ConcreteLimitedSupplyBox(ConcreteBox base, int quantity_available);
-
   const std::string& GetReference() const override { return base_.GetReference(); }
   double GetWidth() const override { return base_.GetWidth(); }
   double GetLength() const override { return base_.GetLength(); }

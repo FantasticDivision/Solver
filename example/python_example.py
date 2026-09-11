@@ -1,21 +1,3 @@
-"""
-python_example.py
-
-Demonstrates the ctypes path -- calling the fitsolver_lib shared library
-built from src/abi.cpp -- instead of the CPython extension module
-(`import fitsolver`, built from src/pymodule.cpp). This is the option to
-reach for if you ever need to call FitSolver from something other than
-Python, or want to see the raw C ABI in action without a Python-specific
-build step.
-
-For the normal, easier Python path, see simple_solve.py / rich_api_example.py
-instead -- both `import fitsolver` directly.
-
-Requires the fitsolver_lib shared library to exist first:
-    cmake -B build
-    cmake --build build --config Release
-    python python_example.py
-"""
 
 import ctypes
 import json
@@ -24,14 +6,7 @@ import platform
 
 
 def _shared_lib_path() -> str:
-    """Locates the fitsolver_lib shared library built by CMake.
 
-    CMake was told (via set_target_properties PREFIX "") to name this
-    library "fitsolver_lib" on every platform, so only the extension
-    differs: .dll on Windows, .dylib on macOS, .so on Linux. Multi-config
-    generators (Visual Studio, Xcode) put it under build/<Config>/ instead
-    of build/ directly, so both locations are checked.
-    """
     system = platform.system()
     filename = {
         "Windows": "fitsolver_lib.dll",
@@ -78,9 +53,9 @@ def solve(request: dict) -> dict:
 
 if __name__ == "__main__":
     here = os.path.dirname(os.path.abspath(__file__))
-    with open(os.path.join(here, "..", "tests", "items.json")) as f:
+    with open(os.path.join(here, "..", "tests", "fixtures", "items.json")) as f:
         items = json.load(f)
-    with open(os.path.join(here, "..", "tests", "boxes.json")) as f:
+    with open(os.path.join(here, "..", "tests", "fixtures", "boxes.json")) as f:
         boxes = json.load(f)
 
     result = solve({"items": items, "boxes": boxes})

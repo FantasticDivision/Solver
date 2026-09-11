@@ -1,0 +1,1 @@
+{"items":[{"ItemCode":"A","Width":5,"Length":5,"Depth":5,"BoxGroup":"G"},{"ItemCode":"B","Width":5,"Length":5,"Depth":5,"BoxGroup":"G"}],"boxes":[{"Reference":"B","Width":10,"Length":10,"Depth":10,"MaximumBoxes":1}]}

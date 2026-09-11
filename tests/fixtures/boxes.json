@@ -23,6 +23,7 @@
     "Width": 1200,
     "Length": 1200,
     "Depth": 1200,
+    "MaxWeight": 50.0,
     "Active": false
   }
 ]

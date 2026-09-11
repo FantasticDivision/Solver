@@ -38,10 +38,12 @@ src/
   abi.h / abi.cpp                # Plain C ABI (fitsolver_solve/fitsolver_free)
   main.cpp                       # fitsolver_app CLI: reads a JSON request, prints JSON
 tests/
-  packer_test.cpp             # Google Test suite for the C++ core
-  test_solver.cpp             # Minimal standalone C++ usage sample
-  test_fitsolver.py           # Manual smoke test for the Python module
-  items.json / boxes.json     # Sample request data used by the tests/examples
+  unit/                       # Focused GoogleTest coverage by component
+  integration/                # End-to-end C++ and Python binding tests
+  fuzz/                       # libFuzzer target and permanent seed corpus
+  fixtures/                   # Sample JSON data used by tests/examples
+  manual/                     # Standalone samples and manual test placeholders
+  TEST_GUIDE.md               # Behaviour documented by the GoogleTest suite
 example/
   simple_solve.py             # Easiest Python usage: JSON in, JSON out
   rich_api_example.py         # Feature-rich Python usage: real objects/attributes
@@ -53,6 +55,62 @@ Dockerfile.dev              # Dev environment image (full build/debug tools)
 docker-compose.yml          # One-command way to spin up the dev environment
 .devcontainer/               # VS Code "Reopen in Container" config
 ```
+Third-party: nlohmann/json
+
+All JSON (de)serialisation in the C++ core — PackRequest, PackResponse, Item/Box and their Concrete* implementations — is done with nlohmann/json, specifically v3.11.3.
+
+It's vendored, not fetched. Unlike GoogleTest and pybind11 (which CMake downloads at configure time via FetchContent — see "Notes" below), nlohmann/json ships directly in the repo as a single header:
+
+third_party/nlohmann/json.hpp
+
+That means: no network access needed to build, no separate install step, nothing to add to the Dockerfile or dev container for it — it's just part of the source tree like any other header. If you ever need to upgrade it, replace that one file with a newer release's single-header amalgamation and update the version noted above.
+
+It's wired into the build as a header-only INTERFACE library in the root CMakeLists.txt:
+
+cmake
+add_library(nlohmann_json INTERFACE)
+target_include_directories(nlohmann_json INTERFACE ${CMAKE_SOURCE_DIR}/third_party)
+
+fitsolver_core links against it PUBLIC, so every target built on top of it — fitsolver_app, fitsolver_lib, fitsolver_tests, the fitsolver Python module — gets #include <nlohmann/json.hpp> for free, with no per-target setup.
+
+Usage pattern. Every serialisable type exposes a ToJson() method returning nlohmann::json; parent objects build up their JSON by assigning into a nlohmann::json and nesting child objects' own ToJson() calls, e.g. PackResponse::ToJson() in src/PackResponse.cpp:
+
+cpp
+nlohmann::json PackResponse::ToJson() const {
+  nlohmann::json j;
+  j["success"] = success;
+
+  nlohmann::json boxes_json = nlohmann::json::array();
+  for (const auto& box : boxes) {
+    nlohmann::json box_json = box.ToJson();   // Box has its own ToJson()
+    box_json["box_index"] = box_index;
+    boxes_json.push_back(box_json);
+    // ...
+  }
+  j["boxes"] = std::move(boxes_json);
+  return j;
+}
+
+PackResponse::Dump(int indent) wraps this with .dump(indent) for a printable string — that's what fitsolver_app writes to stdout and what fitsolver.solve() returns to Python. See "Request / response JSON schema" below for the actual shape this produces.
+
+The other direction — JSON in — follows the same shape in reverse. PackRequest exposes a static FromJson(const nlohmann::json&) that builds each collection from its corresponding array key, delegating each element to a MakeItemFromJson / MakeBoxFromJson helper (see ConcreteItem.h / ConcreteBox.h) rather than parsing fields inline, so per-item/per-box parsing logic stays in one place next to the type it constructs:
+
+cpp
+PackRequest PackRequest::FromJson(const nlohmann::json& j) {
+  ItemList items;
+  if (j.contains("items")) {
+    for (const auto& item_json : j.at("items")) items.Insert(MakeItemFromJson(item_json));
+  }
+
+  BoxList boxes;
+  if (j.contains("boxes")) {
+    for (const auto& box_json : j.at("boxes")) boxes.Insert(MakeBoxFromJson(box_json));
+  }
+
+  return PackRequest(std::move(items), std::move(boxes));
+}
+
+j.contains(...) guards both keys, so a request with an empty/missing items or boxes array parses to an empty list rather than throwing — worth knowing if you're debugging a PackRequest that silently packed nothing. PackRequest::FromJsonString(const std::string&) is the convenience entry point most callers actually use — it just wraps nlohmann::json::parse() around FromJson(), and is what main.cpp and abi.cpp call after reading a request off stdin / across the C ABI.
 
 ## Architecture
 
@@ -262,7 +320,7 @@ export PYTHONPATH="$PWD/build/Release:$PYTHONPATH"   # Windows (bash)
 export PYTHONPATH="$PWD/build:$PYTHONPATH"           # Linux/macOS
 ```
 
-Then run the examples (from the repo root, so the relative `tests/*.json`
+Then run the examples (from the repo root, so the relative `tests/fixtures/*.json`
 paths resolve, or after copying the module into your own project):
 
 ```bash
@@ -342,10 +400,12 @@ Request:
 }
 ```
 
-`BoxGroup`, `AllowedRotation`, `MaxWeight`, `BoxWeight`, `Active`, and
-`MaximumBoxes` are all optional (defaults: no group, `"BestFit"`
-rotation, no weight limit, 0 empty weight, active, unlimited quantity).
-`AllowedRotation` is one of `"Never"`, `"KeepFlat"`, `"BestFit"`.
+`BoxGroup` and `AllowedRotation` are optional on items (defaults: no
+group, `"BestFit"` rotation). `BoxWeight`, `Active`, and `MaximumBoxes`
+are optional on boxes (defaults: 0 empty weight, active, unlimited
+quantity) -- but every box **must** include `MaxWeight`; there's no
+"unlimited weight" box, so a request with a box missing `MaxWeight` is
+rejected. `AllowedRotation` is one of `"Never"`, `"KeepFlat"`, `"BestFit"`.
 `ItemCode` must be unique across the request. Items sharing a
 non-empty `BoxGroup` are always kept together in the same box.
 
@@ -389,7 +449,7 @@ The engine is split into cooperating classes, each in its own file under
   just that gap).
 
 This is a solid greedy heuristic, not an exhaustive/optimal packer --
-`tests/packer_test.cpp` documents the behaviour it guarantees (no
+`tests/integration/packer_test.cpp` documents the behaviour it guarantees (no
 overlaps, weight limits respected, rotation rules respected, linked
 groups never split). It does not implement exhaustive
 all-permutations search across box choices; that would be a reasonable
@@ -544,3 +604,10 @@ everyone else just runs one command and gets the identical
 environment, instead of each person separately debugging missing
 `libssl-dev` or a wrong CMake version on their own machine.
 
+
+
+Build Notes (need to make this pretty)
+cd "/FantasticSolver" && cmake -B build 2>&1 | tail -10
+
+
+cd "/FantasticSolver" && cmake --build build --config Release --parallel 2>&1 | tail -20 && ./build/Release/fitsolver_tests.exe

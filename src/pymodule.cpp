@@ -186,7 +186,7 @@ PYBIND11_MODULE(fitsolver, m) {
 
   py::class_<Box, BoxPtr>(m, "Box", "A box type available to pack items into.")
       .def(py::init(&MakeBoxFromArgs), py::arg("reference"), py::arg("width"), py::arg("length"),
-           py::arg("depth"), py::arg("max_weight") = kNoWeightLimit, py::arg("empty_weight") = 0.0,
+           py::arg("depth"), py::arg("max_weight"), py::arg("empty_weight") = 0.0,
            py::arg("active") = true, py::arg("max_quantity") = std::nullopt)
       .def_property_readonly("reference", &Box::GetReference)
       .def_property_readonly("width", &Box::GetWidth)

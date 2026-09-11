@@ -1,23 +1,3 @@
-"""
-rich_api_example.py
-
-Demonstrates the "feature-rich" side of the fitsolver Python module:
-instead of getting back one big JSON blob, you get real Python objects
-with attributes for every computed feature -- a box's weight, an item's
-placed orientation, remaining space in a box, volume utilisation, and so
-on -- so calling code can pull out exactly what it needs without parsing
-JSON by hand.
-
-Two ways to get a PackResult are shown below:
-  - fitsolver.pack_dicts(items, boxes): pass plain dicts (e.g. straight
-    from your own JSON/DB), no fitsolver types needed on the input side.
-  - fitsolver.pack(items, boxes): pass fitsolver.Item / fitsolver.Box
-    objects built directly in Python.
-
-Run (after building -- see README "Python bindings" section):
-    python rich_api_example.py
-"""
-
 import json
 import os
 
@@ -31,9 +11,9 @@ def demo_pack_dicts() -> None:
     print("=" * 70)
 
     here = os.path.dirname(os.path.abspath(__file__))
-    with open(os.path.join(here, "..", "tests", "items.json")) as f:
+    with open(os.path.join(here, "..", "tests", "fixtures", "items.json")) as f:
         items = json.load(f)
-    with open(os.path.join(here, "..", "tests", "boxes.json")) as f:
+    with open(os.path.join(here, "..", "tests", "fixtures", "boxes.json")) as f:
         boxes = json.load(f)
 
     result = fitsolver.pack_dicts(items, boxes)
