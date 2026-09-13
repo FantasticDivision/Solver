@@ -5,7 +5,6 @@ name: Wheels
 #
 #   push to main                              ->  build + smoke-test only (no publish)
 #   Actions -> Wheels -> Run workflow          ->  build only (artifacts)
-#   Actions -> Wheels -> Run workflow (TestPyPI checked)  ->  build + upload to TestPyPI
 #   git tag v0.1.0 && git push origin v0.1.0   ->  build + publish to PyPI
 #
 # PyPI is the tag-only path -- versions are immutable, so a release is a
@@ -15,13 +14,12 @@ name: Wheels
 #   * PyPI  -> Account -> Publishing -> add a pending publisher:
 #       project fitsolver-client, owner FantasticDivision, repo Solver,
 #       workflow wheels.yml, environment pypi
-#   * (optional) TestPyPI -> same, environment testpypi
-#   * GitHub repo -> Settings -> Environments -> create "pypi" (+ "testpypi")
+#   * GitHub repo -> Settings -> Environments -> create "pypi"
 
 on:
   push:
     # Every main commit gets the full build + clean-env smoke test. The
-    # publish jobs stay gated on `refs/tags/v*` (see their `if:`), so a
+    # publish job stays gated on `refs/tags/v*` (see its `if:`), so a
     # branch push never uploads anything.
     branches: [main]
     tags: ["v*"]
@@ -31,12 +29,7 @@ on:
       - "src/**"
       - "CMakeLists.txt"
       - ".github/workflows/wheels.yml"
-  workflow_dispatch:
-    inputs:
-      testpypi:
-        description: "Upload the built wheels to TestPyPI"
-        type: boolean
-        default: false
+  workflow_dispatch: {}
 
 concurrency:
   group: wheels-${{ github.ref }}
@@ -187,18 +180,3 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
-
-  publish-testpypi:
-    needs: [build, sdist]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && inputs.testpypi
-    environment: testpypi
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with: { path: dist, merge-multiple: true }
-      - uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: dist
-          repository-url: https://test.pypi.org/legacy/

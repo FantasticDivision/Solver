@@ -92,13 +92,7 @@ library) or the client code itself changes.
    The push runs the wheels workflow in build-and-smoke-test-only mode
    (no upload) -- check it is green before tagging.
 
-3. **(Optional) dry-run to TestPyPI.** GitHub -> Actions -> *Wheels* ->
-   *Run workflow*, tick **"Upload the built wheels to TestPyPI"**. Then
-   `pip install -i https://test.pypi.org/simple/ fitsolver-client==X.Y.Z`
-   in a scratch venv and confirm `import fitsolver_client; solve(...)`
-   works.
-
-4. **Tag and push the tag -- this is what publishes to PyPI.**
+3. **Tag and push the tag -- this is what publishes to PyPI.**
 
    ```bash
    git tag vX.Y.Z          # tag name must match the pyproject version, with a leading v
@@ -109,10 +103,10 @@ library) or the client code itself changes.
    `manylinux_2_28`, macOS `universal2`, Windows x64) + an sdist, each
    smoke-tested in a clean venv, then `publish-pypi` uploads them.
 
-5. **Verify.** `pip install fitsolver-client==X.Y.Z` in a fresh venv;
+4. **Verify.** `pip install fitsolver-client==X.Y.Z` in a fresh venv;
    check https://pypi.org/project/fitsolver-client/ shows the new files.
 
-6. **Bump consumers.** Update `fitsolver-client>=X.Y.Z` in
+5. **Bump consumers.** Update `fitsolver-client>=X.Y.Z` in
    `fantastic-portal/backend/pyproject.toml` (and anywhere else it is
    pinned).
 
@@ -121,8 +115,7 @@ library) or the client code itself changes.
 On PyPI: *Account -> Publishing -> add a pending publisher* -- project
 `fitsolver-client`, owner `FantasticDivision`, repo `Solver`, workflow
 `wheels.yml`, environment `pypi`. Create a matching `pypi` environment
-under the GitHub repo's *Settings -> Environments* (and `testpypi` for
-the dry-run path). No secrets are stored.
+under the GitHub repo's *Settings -> Environments*. No secrets are stored.
 
 ## Usage
 
