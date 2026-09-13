@@ -111,6 +111,7 @@ if(FITSOLVER_BUILD_TESTS)
 
   add_executable(fitsolver_tests
     tests/integration/packer_test.cpp
+    tests/integration/thommeax_benchmark_test.cpp
     tests/unit/rotation_test.cpp
     tests/unit/orientateditem_test.cpp
     tests/unit/voidfinder_test.cpp
@@ -127,6 +128,11 @@ if(FITSOLVER_BUILD_TESTS)
       fitsolver_core
       gtest_main
   )
+  # Absolute path so thommeax_benchmark_test.cpp can load its fixture JSON
+  # regardless of the test binary's working directory (ctest vs running it
+  # directly, different per OS/IDE).
+  target_compile_definitions(fitsolver_tests PRIVATE
+    FITSOLVER_THOMMEAX_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/ThommeaxMinimumTests")
 
   # Registers the test binary with CTest, which is what `ctest` in the
   # CI workflow actually runs. A plain add_test() (rather than
