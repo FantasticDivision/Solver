@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <fstream>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -77,9 +78,37 @@ fitsolver::PackResponse PackScenario(const std::string& scenario) {
 
 }  // namespace
 
+// Compare physical unit identities as well as totals: an empty response,
+// duplicated placement, or silently dropped unit must not pass a benchmark.
+void ExpectEveryScenarioUnitPlaced(const std::string& scenario,
+                                  const fitsolver::PackResponse& response,
+                                  int expected_count) {
+  SCOPED_TRACE(scenario);
+  const std::string path = std::string(FITSOLVER_THOMMEAX_DIR) + "/" + scenario + "/items.json";
+  const auto units = ExpandCatalogueItems(nlohmann::json::parse(ReadFile(path)));
+  std::multiset<std::string> expected_codes;
+  for (const auto& unit : units) {
+    expected_codes.insert(unit.at("ItemCode").get<std::string>());
+  }
+  ASSERT_EQ(expected_codes.size(), static_cast<std::size_t>(expected_count));
+  ASSERT_EQ(std::set<std::string>(expected_codes.begin(), expected_codes.end()).size(),
+            expected_codes.size()) << "expanded fixture codes must be unique";
+
+  std::multiset<std::string> placed_codes;
+  for (const auto& box : response.boxes) {
+    for (const auto& item : box.GetItems()) {
+      placed_codes.insert(item.GetItem()->GetItemCode());
+    }
+  }
+  EXPECT_TRUE(response.success);
+  EXPECT_EQ(response.GetTotalPlacedCount(), expected_count);
+  EXPECT_EQ(placed_codes, expected_codes);
+}
+
 TEST(ThommeaxBenchmark, Simple) {
   // RESULTS.md: 2 boxes used, 3 of 3 units packed.
   const fitsolver::PackResponse response = PackScenario("Simple");
+  ExpectEveryScenarioUnitPlaced("Simple", response, 3);
 
   EXPECT_TRUE(response.unplaced_items.Empty())
       << response.unplaced_items.Count() << " unit(s) left unplaced";
@@ -90,6 +119,7 @@ TEST(ThommeaxBenchmark, Simple) {
 TEST(ThommeaxBenchmark, SemiRealistic) {
   // RESULTS.md: 4 boxes used, 115 of 115 units packed.
   const fitsolver::PackResponse response = PackScenario("SemiRealistic");
+  ExpectEveryScenarioUnitPlaced("SemiRealistic", response, 115);
 
   EXPECT_TRUE(response.unplaced_items.Empty())
       << response.unplaced_items.Count() << " unit(s) left unplaced";
@@ -129,6 +159,7 @@ TEST(ThommeaxBenchmark, Chaotic) {
   //    for items with few/no alternatives -- real algorithm work, not
   //    attempted here.
   const fitsolver::PackResponse response = PackScenario("Chaotic");
+  ExpectEveryScenarioUnitPlaced("Chaotic", response, 300);
 
   EXPECT_TRUE(response.unplaced_items.Empty())
       << response.unplaced_items.Count() << " unit(s) left unplaced";

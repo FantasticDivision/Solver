@@ -617,6 +617,9 @@ TEST(VolumePacker, EveryPlacedItemRestsOnTheFloorOrOnItemsBelow) {
       fitsolver::VolumePacker(MakeBox("BOX", 100, 100, 100)).Pack(items);
   const auto& placed = packed.GetItems().ToVector();
   ASSERT_FALSE(placed.empty());
+  ASSERT_TRUE(std::any_of(placed.begin(), placed.end(),
+                          [](const auto& item) { return item.GetZ() > 1e-6; }))
+      << "fixture must exercise support above the floor";
 
   for (const auto& it : placed) {
     if (it.GetZ() <= 1e-6) continue;  // resting on the box floor
@@ -647,10 +650,46 @@ TEST(VolumePacker, PlacementListIsBottomUp) {
       fitsolver::VolumePacker(MakeBox("BOX", 60, 60, 60)).Pack(items);
   const auto& placed = packed.GetItems().ToVector();
   ASSERT_GT(placed.size(), 1u);
+  ASSERT_EQ(placed.size(), 8u);  // Two layers of four 25-unit cubes.
+  ASSERT_TRUE(std::any_of(placed.begin(), placed.end(),
+                          [](const auto& item) { return item.GetZ() > 1e-6; }))
+      << "fixture must exercise ordering across layers";
   for (std::size_t i = 1; i < placed.size(); ++i) {
     EXPECT_GE(placed[i].GetZ() + 1e-6, placed[i - 1].GetZ())
         << "placement " << i << " drops below the previous one";
   }
+}
+
+TEST(VolumePacker, AcceptsExactlySeventyFivePercentSupport) {
+  ItemList items;
+  // The larger-volume base packs first. Neither item may rotate, and
+  // the top only fits above the base, with 75% of its footprint supported.
+  items.Insert(MakeItem("BASE", 75, 100, 20, 1, Rotation::kNever));
+  items.Insert(MakeItem("TOP", 100, 100, 10, 1, Rotation::kNever));
+  const auto packed = fitsolver::VolumePacker(MakeBox("BOX", 100, 100, 30)).Pack(items);
+  const auto& placed = packed.GetItems().ToVector();
+
+  ASSERT_EQ(placed.size(), 2u);
+  EXPECT_EQ(placed[0].GetItem()->GetItemCode(), "BASE");
+  EXPECT_DOUBLE_EQ(placed[0].GetZ(), 0.0);
+  EXPECT_EQ(placed[1].GetItem()->GetItemCode(), "TOP");
+  EXPECT_DOUBLE_EQ(placed[1].GetX(), 0.0);
+  EXPECT_DOUBLE_EQ(placed[1].GetY(), 0.0);
+  EXPECT_DOUBLE_EQ(placed[1].GetZ(), 20.0);
+}
+
+TEST(VolumePacker, RejectsSupportJustBelowSeventyFivePercent) {
+  ItemList items;
+  // 74.99% is below the threshold by more than its numerical tolerance.
+  // The top cannot fit anywhere on the floor, so it must remain unpacked.
+  items.Insert(MakeItem("BASE", 74.99, 100, 20, 1, Rotation::kNever));
+  items.Insert(MakeItem("TOP", 100, 100, 10, 1, Rotation::kNever));
+  const auto packed = fitsolver::VolumePacker(MakeBox("BOX", 100, 100, 30)).Pack(items);
+  const auto& placed = packed.GetItems().ToVector();
+
+  ASSERT_EQ(placed.size(), 1u);
+  EXPECT_EQ(placed[0].GetItem()->GetItemCode(), "BASE");
+  EXPECT_DOUBLE_EQ(placed[0].GetZ(), 0.0);
 }
 
 TEST(VolumePacker, WrapsAcrossRowsAndLayersWithoutOverlap) {
