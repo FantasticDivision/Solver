@@ -36,13 +36,15 @@ TEST(ItemClassTest, JsonFactoryCreatesPlainAndLinkedItems) {
   EXPECT_NE(dynamic_cast<const fitsolver::LinkedItem*>(linked.get()), nullptr);
 }
 
-TEST(ItemSorterClassTest, PrefersLinkedThenLargerItems) {
+TEST(ItemSorterClassTest, PrefersUngroupedThenLargerItems) {
   fitsolver::DefaultItemSorter sorter;
   ConcreteItem small("S", "S", 1, 1, 1, 1);
   ConcreteItem large("L", "L", 2, 2, 2, 1);
   ConcreteLinkedItem linked(ConcreteItem("G", "G", 1, 1, 1, 1), "GROUP");
 
-  EXPECT_LT(sorter.Compare(linked, large), 0);
+  // Ungrouped sorts before linked, even a much bigger linked item (mirrors
+  // BoxPacker's DefaultItemSorter -- see its Compare() comment for why).
+  EXPECT_LT(sorter.Compare(large, linked), 0);
   EXPECT_LT(sorter.Compare(large, small), 0);
 }
 

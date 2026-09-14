@@ -57,7 +57,7 @@ flowchart TB
 |---|---|
 | `ItemClassTest.ConcreteAndLinkedItemsExposeTheirData` | A plain item exposes code, dimensions, volume and rotation, while a linked item exposes and serializes its group. |
 | `ItemClassTest.JsonFactoryCreatesPlainAndLinkedItems` | `MakeItemFromJson` returns the correct concrete item type depending on whether `BoxGroup` is present. |
-| `ItemSorterClassTest.PrefersLinkedThenLargerItems` | The default sorter places linked items first and otherwise prefers the item with greater volume. |
+| `ItemSorterClassTest.PrefersUngroupedThenLargerItems` | The default sorter places ungrouped items before any linked item and otherwise prefers the item with greater volume. |
 | `ItemListClassTest.InsertsSortsCountsAndRemovesItems` | `ItemList` inserts, counts, totals, sorts and removes items correctly. |
 | `BoxClassTest.ConcreteBoxReportsCapacityVolumeAndJson` | A box calculates inner volume and item-weight capacity and exposes its reference in JSON. |
 | `BoxClassTest.LimitedSupplyFactoryPreservesQuantity` | A JSON `MaximumBoxes` value creates a limited-supply box with the same quantity. |

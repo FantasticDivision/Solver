@@ -15,12 +15,13 @@ const std::string* BoxGroupOf(const Item& item) {
 }  // namespace
 
 int EntropyItemSorter::Compare(const Item& a, const Item& b) const {
-  // Same box-group clustering as DefaultItemSorter -- this is what keeps
-  // a LinkedItem group placeable together, not a tunable heuristic.
+  // Same box-group clustering as DefaultItemSorter (ungrouped items
+  // sort first -- see its comment for why) -- this is what keeps a
+  // LinkedItem group placeable together, not a tunable heuristic.
   const std::string* group_a = BoxGroupOf(a);
   const std::string* group_b = BoxGroupOf(b);
   if ((group_a != nullptr) != (group_b != nullptr)) {
-    return group_a != nullptr ? -1 : 1;
+    return group_a != nullptr ? 1 : -1;
   }
   if (group_a != nullptr && group_b != nullptr && *group_a != *group_b) {
     return *group_a < *group_b ? -1 : 1;

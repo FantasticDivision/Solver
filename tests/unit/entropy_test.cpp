@@ -106,7 +106,7 @@ TEST(EntropyItemSorterTest, VolumeTieBreaksTowardMoreElongatedShapeFirst) {
   EXPECT_GT(sorter.Compare(*cube, *plank), 0);
 }
 
-TEST(EntropyItemSorterTest, LinkedItemsShareABoxGroupSortTogetherBeforeVolume) {
+TEST(EntropyItemSorterTest, LinkedItemsShareABoxGroupAndSortAfterUngrouped) {
   EntropyItemSorter sorter;
   ConcreteItem base_a("A", "A", 1, 1, 1, 1.0);
   ConcreteItem base_b("B", "B", 1, 1, 1, 1.0);
@@ -114,10 +114,11 @@ TEST(EntropyItemSorterTest, LinkedItemsShareABoxGroupSortTogetherBeforeVolume) {
   ItemPtr grouped2 = std::make_shared<ConcreteLinkedItem>(base_b, "GROUP-1");
   ItemPtr solo_big = MakeItem("SOLO-BIG", 100, 100, 100, 1.0);
 
-  // Grouped items sort before an ungrouped item, even a much bigger one --
-  // matches DefaultItemSorter's clustering, which EntropyItemSorter must
-  // preserve for LinkedItem correctness.
-  EXPECT_LT(sorter.Compare(*grouped, *solo_big), 0);
+  // An ungrouped item sorts before any grouped one, even a much smaller
+  // one -- matches DefaultItemSorter's clustering (ungrouped-first),
+  // which EntropyItemSorter must preserve for LinkedItem correctness.
+  EXPECT_GT(sorter.Compare(*grouped, *solo_big), 0);
+  EXPECT_LT(sorter.Compare(*solo_big, *grouped), 0);
   // Same group and volume -- falls through to the item_code tiebreak
   // ("A" < "B"), same as DefaultItemSorter's final tiebreak.
   EXPECT_LT(sorter.Compare(*grouped, *grouped2), 0);

@@ -13,7 +13,7 @@
     "Width": 500,
     "Length": 450,
     "Depth": 45,
-    "MaxWeight": 4,
+    "MaxWeight": 4.5,
     "BoxWeight": 0.3,
     "Active": true
   },
@@ -31,7 +31,7 @@
     "Width": 550,
     "Length": 550,
     "Depth": 550,
-    "MaxWeight": 5,
+    "MaxWeight": 6,
     "BoxWeight": 1.5,
     "Active": true
   },

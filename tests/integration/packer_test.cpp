@@ -391,6 +391,11 @@ TEST(ConcreteBox, RejectsMissingReference) {
 }
 
 TEST(ItemList, SortsByLinkedGroupVolumeWeightAndCode) {
+  // Ungrouped items sort before any group (mirrors BoxPacker's
+  // DefaultItemSorter: PHP's `$groupA <=> $groupB` treats an ungrouped
+  // item's null group as "", which sorts before any group name) --
+  // among themselves, ungrouped items still order by volume then weight
+  // then code, same as grouped items do within a shared group.
   ItemList items;
   items.Insert(MakeItem("B", 1, 1, 1, 1));
   items.Insert(MakeItem("A", 1, 1, 1, 2));
@@ -402,11 +407,11 @@ TEST(ItemList, SortsByLinkedGroupVolumeWeightAndCode) {
 
   const auto& sorted = items.SortedItems();
   ASSERT_EQ(sorted.size(), 5u);
-  EXPECT_EQ(sorted[0]->GetItemCode(), "GROUP-A");
-  EXPECT_EQ(sorted[1]->GetItemCode(), "GROUP-B");
-  EXPECT_EQ(sorted[2]->GetItemCode(), "LARGE");
-  EXPECT_EQ(sorted[3]->GetItemCode(), "A");
-  EXPECT_EQ(sorted[4]->GetItemCode(), "B");
+  EXPECT_EQ(sorted[0]->GetItemCode(), "LARGE");
+  EXPECT_EQ(sorted[1]->GetItemCode(), "A");
+  EXPECT_EQ(sorted[2]->GetItemCode(), "B");
+  EXPECT_EQ(sorted[3]->GetItemCode(), "GROUP-A");
+  EXPECT_EQ(sorted[4]->GetItemCode(), "GROUP-B");
 }
 
 TEST(ItemList, MutationInvalidatesSortCacheAndRemovalUsesIdentity) {

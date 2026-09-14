@@ -2,14 +2,25 @@
 
 Packed with [dvdoug/boxpacker](https://github.com/dvdoug/boxpacker) 4.3 on PHP 8.4. Runtime ~0.2s. Items with no BoxGroup can share a box with any group, so they pack in the same pass as the largest group (CORROSIVE); FOOD packs separately. See [SCENARIO.md](SCENARIO.md) for the traps built into this dataset.
 
+**Correction:** Picture Box's and Large Cube's `Max Weight` below were
+originally transcribed as 4 and 5 (kg). Boxes 59/60 (Picture Box + 1×
+LEAD, 4.20kg gross) and 61–63 (Large Cube + 1× GLASS, 6.00kg gross)
+further down this file both report a gross weight that *exceeds* those
+figures, which the packer this table credits cannot itself produce
+(`getWeight() <= getMaxWeight()` is an asserted invariant in
+dvdoug/boxpacker's own `PackedBox.php`). Corrected to the minimum values
+that make every row in this file achievable: Picture Box 4 → 4.5,
+Large Cube 5 → 6. `boxes.json` matches this corrected table, not the
+original one.
+
 ## Box candidates (in)
 
 | Reference | Width | Length | Depth | Max Weight (kg) | Box Weight (kg) | Limit |
 |-----------|------:|-------:|------:|----------------:|----------------:|-------|
 | Poster Tube | 600 | 90 | 90 | 3 | 0.4 | — |
-| Picture Box | 500 | 450 | 45 | 4 | 0.3 | — |
+| Picture Box | 500 | 450 | 45 | 4.5 | 0.3 | — |
 | Parts Box | 210 | 160 | 110 | 30 | 0.1 | — |
-| Large Cube | 550 | 550 | 550 | 5 | 1.5 | — |
+| Large Cube | 550 | 550 | 550 | 6 | 1.5 | — |
 | Standard Carton | 400 | 300 | 250 | 20 | 0.5 | max 2 |
 | Golf Bag Box | 1000 | 250 | 200 | 18 | 2.0 | max 12 |
 | Legacy Carton | 450 | 350 | 300 | 50 | 0.6 | inactive |
