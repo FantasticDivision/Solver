@@ -2,7 +2,6 @@
 
 #include <optional>
 #include <unordered_map>
-#include <unordered_set>
 
 #include "LimitedSupplyBox.h"
 #include "LinkedItem.h"
@@ -13,28 +12,37 @@ namespace fitsolver {
 
 namespace {
 
-// Strips any BoxGroup from `candidate` that isn't present in full --
-// items whose group is only partially represented go back to being
-// unplaced (for this box) rather than splitting the group across boxes.
-// `group_totals` is the authoritative remaining count per group across
-// the whole still-unplaced pool, not just this candidate.
-void EnforceLinkedGroups(PackedBox& candidate,
-                          const std::unordered_map<std::string, int>& group_totals) {
-  if (group_totals.empty()) return;
+// A BoxGroup means "don't mix with a DIFFERENT group", not "every unit of
+// this group must end up in one box together" -- a group's units are free
+// to spread across as many boxes as it takes, same as ungrouped items,
+// as long as no single box ends up holding two or more distinct groups.
+// (Verified against the Thommeax Chaotic benchmark's reference packing,
+// which spreads a 14-unit and a 34-unit group across dozens of boxes
+// each mixed with ungrouped items -- see
+// tests/ThommeaxMinimumTests/Chaotic/RESULTS.md.)
+//
+// If a candidate box's shelf-fill happened to place items from more than
+// one group (DefaultItemSorter tries grouped items first, so this is
+// common on a mixed load), keep only the best-represented group's items
+// -- plus every ungrouped item, which are always compatible -- and
+// return the rest to unplaced for another box to pick up.
+void EnforceGroupSegregation(PackedBox& candidate) {
+  const auto counts = candidate.GetItems().GetLinkedGroupCounts();
+  if (counts.size() <= 1) return;  // 0 or 1 distinct group present: nothing to resolve
 
-  const auto candidate_counts = candidate.GetItems().GetLinkedGroupCounts();
-  std::unordered_set<std::string> incomplete_groups;
-  for (const auto& [group, total] : group_totals) {
-    const auto it = candidate_counts.find(group);
-    const int have = it == candidate_counts.end() ? 0 : it->second;
-    if (have > 0 && have < total) incomplete_groups.insert(group);
+  const std::string* keep_group = nullptr;
+  int best_count = -1;
+  for (const auto& [group, count] : counts) {
+    if (count > best_count) {
+      best_count = count;
+      keep_group = &group;
+    }
   }
-  if (incomplete_groups.empty()) return;
 
   PackedBox rebuilt(candidate.GetBox());
   for (const auto& packed_item : candidate.GetItems()) {
     if (const auto* linked = dynamic_cast<const LinkedItem*>(packed_item.GetItem().get())) {
-      if (incomplete_groups.count(linked->GetBoxGroup()) > 0) continue;
+      if (linked->GetBoxGroup() != *keep_group) continue;
     }
     rebuilt.AddItem(packed_item);
   }
@@ -66,8 +74,6 @@ PackResponse Packer::Pack(const ItemList& items, const BoxList& boxes) const {
   PackedBoxList packed_boxes;
 
   while (!remaining.Empty()) {
-    const auto group_totals = remaining.GetLinkedGroupCounts();
-
     std::optional<PackedBox> best;
     for (const auto& box : active_boxes) {
       if (const auto* limited = dynamic_cast<const LimitedSupplyBox*>(box.get())) {
@@ -76,7 +82,7 @@ PackResponse Packer::Pack(const ItemList& items, const BoxList& boxes) const {
 
       VolumePacker volume_packer(box);
       PackedBox candidate = volume_packer.Pack(remaining);
-      EnforceLinkedGroups(candidate, group_totals);
+      EnforceGroupSegregation(candidate);
       if (candidate.GetItems().Count() == 0) continue;
 
       if (!best.has_value() || IsBetterCandidate(candidate, *best)) {

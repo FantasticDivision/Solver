@@ -100,15 +100,34 @@ TEST(ThommeaxBenchmark, SemiRealistic) {
 TEST(ThommeaxBenchmark, Chaotic) {
   // RESULTS.md: 67 boxes used, 300 of 300 units packed.
   //
-  // KNOWN GAP, not a regression: as of this test's addition our engine
-  // leaves 211 of 300 units unplaced here (confirmed identical on both
-  // the pre- and post-gravity-constraint VolumePacker, so the greedy
-  // heuristic itself -- not the support check -- is the limiting factor
-  // on a dataset this large and mixed, especially with the MaximumBoxes
-  // caps on Standard Carton/Golf Bag Box). Left failing deliberately so
-  // this benchmark stays visible until the packing algorithm improves;
-  // see the repo's "Configurable objective" / "exhaustive packing"
-  // follow-up ideas.
+  // History: originally 211/300 unplaced. Packer::EnforceGroupSegregation
+  // fixed the big one -- the engine was enforcing "every unit of a
+  // BoxGroup must end up in ONE box together", but the reference result
+  // proves the real rule is weaker ("a box may not mix two DIFFERENT
+  // groups"; a single group's units are free to spread across many
+  // boxes). Getting that right dropped this to 7/300 unplaced, using
+  // fewer boxes than the reference (64 vs 67).
+  //
+  // The remaining 7 (GLASS x3, LEAD x2, ANVIL x2) split into two
+  // different, NOT-yet-fixed causes:
+  //  - GLASS/LEAD: blocked by ConcreteBox::GetWeightCapacityForItems()
+  //    subtracting BoxWeight from MaxWeight (capacity = MaxWeight -
+  //    BoxWeight). The reference's own numbers (e.g. its Picture
+  //    Box+LEAD result reports 4.20kg gross against a 4kg MaxWeight)
+  //    imply MaxWeight is meant as a contents-only cap, BoxWeight purely
+  //    informational for gross-weight reporting. Deliberately NOT
+  //    changed here: ConcreteBox, UnlimitedAndExhaustedWeightCapacities
+  //    and PackerRegression, ExactFitOnEveryAxisAndWeightBoundarySucceeds
+  //    all explicitly assert today's subtracted-capacity behaviour, and
+  //    every real box in the portal's catalogue depends on whichever
+  //    meaning wins -- a product call, not an engine bug fix.
+  //  - ANVIL: a scarcity problem, not infeasibility -- it fits Standard
+  //    Carton's weight/size fine, but by the time the round-based greedy
+  //    loop would place it there, both MaximumBoxes=2 Standard Cartons
+  //    are already spent on rounds that scored higher (e.g. 46x BEAD).
+  //    Needs the box-selection loop to reserve limited-supply capacity
+  //    for items with few/no alternatives -- real algorithm work, not
+  //    attempted here.
   const fitsolver::PackResponse response = PackScenario("Chaotic");
 
   EXPECT_TRUE(response.unplaced_items.Empty())

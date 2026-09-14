@@ -212,6 +212,47 @@ TEST(Packer, LinkedItemsStayInTheSameBox) {
   EXPECT_EQ(response.boxes.begin()->GetItems().Count(), 2u);
 }
 
+TEST(Packer, DifferentBoxGroupsAreNeverMixedInOneBox) {
+  // A BoxGroup means "don't mix with a different group", not "must all be
+  // in one box together" -- so with 2 GROUP-1 + 2 GROUP-2 items and only
+  // room for 2 per box, every packed box must be single-group.
+  ItemList items;
+  items.Insert(std::make_shared<ConcreteLinkedItem>(ConcreteItem("A1", "A1", 50, 50, 50, 1.0), "GROUP-1"));
+  items.Insert(std::make_shared<ConcreteLinkedItem>(ConcreteItem("A2", "A2", 50, 50, 50, 1.0), "GROUP-1"));
+  items.Insert(std::make_shared<ConcreteLinkedItem>(ConcreteItem("B1", "B1", 50, 50, 50, 1.0), "GROUP-2"));
+  items.Insert(std::make_shared<ConcreteLinkedItem>(ConcreteItem("B2", "B2", 50, 50, 50, 1.0), "GROUP-2"));
+  BoxList boxes;
+  boxes.Insert(MakeBox("BOX", 100, 50, 50));  // fits exactly 2 of these per box
+
+  PackResponse response = Packer().Pack(items, boxes);
+
+  ASSERT_TRUE(response.success);
+  for (const auto& box : response.boxes) {
+    std::set<std::string> groups_in_box;
+    for (const auto& packed : box.GetItems()) {
+      groups_in_box.insert(dynamic_cast<const fitsolver::LinkedItem&>(*packed.GetItem()).GetBoxGroup());
+    }
+    EXPECT_LE(groups_in_box.size(), 1u) << "box " << box.GetBox()->GetReference() << " mixes groups";
+  }
+}
+
+TEST(Packer, ASingleBoxGroupCanSpreadAcrossMultipleBoxes) {
+  // 3 GROUP-1 items but only room for 2 per box: the group does NOT have
+  // to fit in one box, it just can't share a box with a DIFFERENT group.
+  ItemList items;
+  for (int i = 0; i < 3; ++i) {
+    items.Insert(std::make_shared<ConcreteLinkedItem>(
+        ConcreteItem("G" + std::to_string(i), "G", 50, 50, 50, 1.0), "GROUP-1"));
+  }
+  BoxList boxes;
+  boxes.Insert(MakeBox("BOX", 100, 50, 50));  // fits 2 per box, unlimited supply
+
+  PackResponse response = Packer().Pack(items, boxes);
+
+  EXPECT_TRUE(response.success);
+  EXPECT_EQ(response.GetTotalPlacedCount(), 3);
+}
+
 TEST(Packer, VolumeUtilisationAndRemainingSpaceAreConsistent) {
   ItemList items;
   items.Insert(MakeItem("ITM-1", 50, 50, 50, 1.0));
