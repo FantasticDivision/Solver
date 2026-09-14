@@ -99,11 +99,15 @@ jobs:
 
       - name: Smoke test the wheel in a clean env
         run: |
-          python -m venv /tmp/tw || python -m venv "$RUNNER_TEMP/tw"
           VENV="${RUNNER_TEMP:-/tmp}/tw"
-          "$VENV/bin/python" -m pip install dist/*.whl 2>/dev/null || "$VENV/Scripts/python" -m pip install dist/*.whl
-          PY="$VENV/bin/python"; [ -x "$PY" ] || PY="$VENV/Scripts/python"
-          cd "$RUNNER_TEMP"
+          python -m venv "$VENV"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            PY="$VENV/Scripts/python.exe"
+          else
+            PY="$VENV/bin/python"
+          fi
+          "$PY" -m pip install dist/*.whl
+          cd "${RUNNER_TEMP:-/tmp}"
           "$PY" -c "import fitsolver_client as c; r=c.solve({'items':[{'ItemCode':'A','ItemReference':'x','Width':10,'Length':10,'Depth':10,'Weight':0.0}],'boxes':[{'Reference':'B','Width':100,'Length':100,'Depth':100,'MaxWeight':50.0}]}); assert r['success']; print('ok', c.__file__)"
 
       - uses: actions/upload-artifact@v4
