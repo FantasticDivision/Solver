@@ -163,16 +163,32 @@ TEST(ThommeaxBenchmark, Chaotic) {
   // minimum needed to make each box's own documented gross weight
   // achievable), not the engine's weight-capacity formula.
   //
-  // Not attempted: box count is still 77 vs the reference's 67 --
-  // closing that needs real heuristic-fidelity work (e.g. replicating
-  // LayerPacker's exact shelf/layer strategy), not a confirmable bug
-  // fix, so it's left as a known gap rather than guessed at.
+  // 77 -> 75: VolumePacker/LayerPacker/OrientatedItemFactory/
+  // OrientatedItemSorter/LayerStabiliser were then rewritten as a
+  // faithful port of BoxPacker's actual layer-packing engine (previously
+  // this project used a simpler single-scan shelf+void-fill approach),
+  // to close the density gap -- see those classes' headers.
+  //
+  // The remaining 75 vs 67 is not a confirmed bug: an isolated
+  // Golf-Bag-Box-only experiment (unlimited quantity, no competing box
+  // types) confirms the engine DOES mix CORROSIVE items in with
+  // ungrouped ones when given enough attempts, so nothing structurally
+  // prevents it. With the real box catalog's `max 12` Golf Bag Box quota
+  // in play, this port's per-box packing places slightly MORE ungrouped
+  // items per box on average than the reference (182 vs 165 across the
+  // same 12 boxes), which paradoxically exhausts that quota one round
+  // sooner -- before the 8x ACID / 6x JUG CORROSIVE units get a turn --
+  // forcing them into dedicated small boxes instead of riding along in a
+  // Golf Bag Box the way the reference's packing does. Closing this
+  // fully would mean matching the reference's per-round item count
+  // exactly, which needs item-by-item diffing against its output, not a
+  // confirmable structural fix.
   const fitsolver::PackResponse response = PackScenario("Chaotic");
   ExpectEveryScenarioUnitPlaced("Chaotic", response, 300);
 
   EXPECT_TRUE(response.unplaced_items.Empty())
       << response.unplaced_items.Count() << " unit(s) left unplaced";
-  EXPECT_LE(response.boxes.Count(), 90u)
+  EXPECT_LE(response.boxes.Count(), 78u)
       << "used " << response.boxes.Count() << " boxes; reference used 67 "
       << "(box-count parity is a known, separate gap -- see comment above)";
 }

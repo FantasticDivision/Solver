@@ -19,9 +19,21 @@ class OrientatedItem {
   double GetLength() const { return length_; }
   double GetDepth() const { return depth_; }
   double GetVolume() const { return width_ * length_ * depth_; }
+  double GetSurfaceFootprint() const { return width_ * length_; }
   // "WLD" = original order, "LWD" = width/length swapped, etc.
   const std::string& GetOrientationCode() const { return code_; }
   bool IsRotated() const { return code_ != "WLD"; }
+
+  // Low centre of gravity, tipping point modelled as >15 degrees (mirrors
+  // BoxPacker's OrientatedItem::isStable(); assumes uniform weight
+  // distribution across the item).
+  bool IsStable() const;
+
+  // True if `item`'s own (unrotated) dimensions match this orientation's,
+  // as a multiset -- i.e. some rotation of `item` would occupy the same
+  // footprint. Used to special-case "just place it the same way as the
+  // last, identical item" and to detect runs of identical items.
+  bool IsSameDimensions(const ItemPtr& item) const;
 
  private:
   ItemPtr item_;

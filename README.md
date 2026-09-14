@@ -28,6 +28,12 @@ src/
   PackedBoxList.h/.cpp         # All boxes used by one packing run
   VoidSpace.h/.cpp, VoidFinder.h/.cpp  # Finds leftover rectangular gaps in a box
   WorkingVolume.h/.cpp         # A Box representing one such gap, for sub-packing
+  PackedLayer.h/.cpp            # One horizontal slab of a box's packing
+  LayerStabiliser.h/.cpp        # Reorders layers so nothing overhangs thin air
+  PackQueue.h                   # Priority work queue for one packing attempt
+  OrientatedItemFactory.h/.cpp  # Which orientation(s) of an item fit a space
+  OrientatedItemSorter.h/.cpp   # Ranks candidate orientations (incl. look-ahead)
+  LayerPacker.h/.cpp            # Fills one layer: shelf row, then stack/gap-fill
   VolumePacker.h/.cpp          # Packs items into ONE box instance
   WeightRedistributor.h/.cpp   # Post-pass: evens out weight between boxes used
   Packer.h/.cpp                # Top-level entry point: fitsolver::Packer().Pack(...)
@@ -253,15 +259,31 @@ classDiagram
     Packer ..> VolumePacker : tries each active box type via
     Packer ..> WeightRedistributor : rebalances weight via, after packing
 
+    class LayerPacker {
+        +PackLayer(...) PackedLayer
+    }
+    class OrientatedItemFactory {
+        +GetBestOrientation(...) OrientatedItem
+    }
+    class OrientatedItemSorter {
+        +operator()(a, b) bool
+    }
+    class LayerStabiliser {
+        +Stabilise(PackedLayer[]) PackedLayer[]
+    }
     class VoidFinder {
         +Find(...) VoidSpace[]
     }
     class WorkingVolume
     Box <|.. WorkingVolume : implements
 
-    VolumePacker ..> VoidFinder : finds leftover gaps via
+    VolumePacker ..> LayerPacker : builds each horizontal layer via
+    LayerPacker ..> OrientatedItemFactory : picks each item's orientation via
+    OrientatedItemFactory ..> OrientatedItemSorter : ranks candidate orientations via
+    OrientatedItemSorter ..> WorkingVolume : look-ahead sub-packs a few next items into
+    VolumePacker ..> LayerStabiliser : reorders finished layers via
+    VolumePacker ..> VoidFinder : fills leftover gaps via
     VoidFinder ..> VoidSpace : produces
-    VolumePacker ..> WorkingVolume : wraps a gap as, to sub-pack into
 
     class OrientatedItem {
         +GetOrientationCode() string
@@ -276,6 +298,12 @@ classDiagram
     }
     PackedItem *-- OrientatedItem : placed at a position, in one orientation
 
+    class PackedLayer {
+        +GetFootprint() double
+        +GetDepth() double
+    }
+    PackedLayer "1" o-- "*" PackedItem : one horizontal slab of a box
+
     class PackedBox {
         +GetWeight() double
         +GetVolumeUtilisation() double
@@ -289,12 +317,20 @@ classDiagram
 `Packer` never touches geometry directly -- each round it just asks
 `VolumePacker` "how much of what's left fits in a fresh one of these?"
 for every active box type, keeps whichever answer is best (most items,
-ties broken by utilisation), and repeats until nothing more fits.
-`VolumePacker` does a greedy shelf pass (an `OrientatedItem` per
-placement -- the specific rotation an `Item` ended up in), then uses
-`VoidFinder`/`WorkingVolume` to squeeze more items into whatever
-rectangular gaps are left over. See "How the algorithm works" below for
-the full walkthrough.
+ties broken by utilisation, then used volume), and repeats until nothing
+more fits. `VolumePacker` is a faithful port of BoxPacker's real
+layer-packing engine: it builds up horizontal `PackedLayer`s one at a
+time via `LayerPacker` (which fills a shelf row, recursively stacks a
+shorter item's leftover headroom, and recursively fills the lengthwise
+gap behind it), picking each item's orientation via
+`OrientatedItemFactory`/`OrientatedItemSorter` (a bounded look-ahead that
+sub-packs a few of the next items into a scratch `WorkingVolume` to see
+which choice leaves more room), then straightens the result with
+`LayerStabiliser` (reorders whole layers so the biggest footprint ends
+up at the bottom) and tops it off with `VoidFinder` filling whatever
+rectangular gaps remain. It also tries the box both ways round and every
+orientation of the very first item, keeping whichever attempt packs the
+most. See "How the algorithm works" below for the full walkthrough.
 
 ### 4. The library boundary: how anything outside `src/` calls this
 
@@ -483,27 +519,43 @@ The engine is split into cooperating classes, each in its own file under
 - **`Packer`** is the entry point. It repeatedly picks, from the active
   box types (a `BoxList`), the single box instance that fits the most of
   what's still unplaced (a `ItemList`) -- ties broken by volume
-  utilisation -- via `VolumePacker`, and repeats until nothing more
-  fits. Items sharing a `BoxGroup` (`LinkedItem`) are only kept in a
-  candidate box if *all* of that group made it in; otherwise they're
-  pulled back out so they can be tried together elsewhere. If more than
-  one box ends up used, `WeightRedistributor` runs afterwards to move
-  items between boxes where that reduces weight variance without
-  changing the box count.
-- **`VolumePacker`** packs one box instance: a greedy shelf pass (items
-  placed left-to-right, wrapping to a new row then a new vertical layer,
-  largest items first, trying every orientation the item's
-  `AllowedRotation` allows), then a void-filling pass that uses
-  `VoidFinder` to locate leftover rectangular gaps and packs more items
-  into each one (via `WorkingVolume`, a `Box` implementation representing
-  just that gap).
+  utilisation, then used volume -- via `VolumePacker`, and repeats until
+  nothing more fits. A `BoxGroup` (`LinkedItem`) only means "don't mix
+  with a *different* group" -- a box may not end up holding two or more
+  distinct groups together, but a single group is free to spread across
+  as many boxes as it takes, same as ungrouped items; if a candidate box
+  ends up with more than one group present, only the best-represented
+  one (plus every ungrouped item, always compatible) is kept, and the
+  rest are pulled back out for another box to pick up. If more than one
+  box ends up used, `WeightRedistributor` runs afterwards to move items
+  between boxes where that reduces weight variance without changing the
+  box count.
+- **`VolumePacker`** packs one box instance -- a faithful port of
+  BoxPacker's real layer-packing engine, not a simple shelf scan. It
+  builds up horizontal `PackedLayer`s one at a time via `LayerPacker`:
+  each layer fills a shelf row left-to-right, recursively stacks a
+  shorter item's spare headroom with more items, and recursively fills
+  the lengthwise gap left behind a short item next to a taller one.
+  Every item's orientation is chosen by `OrientatedItemFactory` /
+  `OrientatedItemSorter` -- preferring an exact fit, then (for a run of
+  identical items) whichever orientation tiles the most of them on a
+  grid, then a bounded look-ahead that sub-packs a few of the next items
+  into a scratch region to see which choice leaves more usable space.
+  Once every item that fits is placed, `LayerStabiliser` reorders the
+  whole layers by descending footprint (so nothing ends up overhanging
+  thin air) and `VoidFinder` fills whatever rectangular gaps remain
+  (via `WorkingVolume`, a `Box` implementation representing just that
+  gap). The box is tried both its natural way round and with
+  width/length swapped, and every valid orientation of the single
+  highest-priority item is tried as the starting placement -- keeping
+  whichever full attempt packs the most, best utilisation breaking ties.
 
-This is a solid greedy heuristic, not an exhaustive/optimal packer --
+This is a solid heuristic port, not an exhaustive/optimal packer --
 `tests/integration/packer_test.cpp` documents the behaviour it guarantees (no
-overlaps, weight limits respected, rotation rules respected, linked
-groups never split). It does not implement exhaustive
-all-permutations search across box choices; that would be a reasonable
-follow-up if the greedy result isn't good enough for a given item set.
+overlaps, weight limits respected, rotation rules respected, box groups
+never mixed). It does not implement exhaustive all-permutations search
+across box choices; that would be a reasonable follow-up if the result
+isn't good enough for a given item set.
 
 ### Extending it
 

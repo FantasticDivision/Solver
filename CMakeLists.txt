@@ -49,6 +49,11 @@ set(FITSOLVER_CORE_SOURCES
   src/VoidSpace.cpp
   src/VoidFinder.cpp
   src/WorkingVolume.cpp
+  src/PackedLayer.cpp
+  src/LayerStabiliser.cpp
+  src/OrientatedItemFactory.cpp
+  src/OrientatedItemSorter.cpp
+  src/LayerPacker.cpp
   src/VolumePacker.cpp
   src/WeightRedistributor.cpp
   src/Packer.cpp

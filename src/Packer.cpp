@@ -53,7 +53,13 @@ bool IsBetterCandidate(const PackedBox& candidate, const PackedBox& current_best
   if (candidate.GetItems().Count() != current_best.GetItems().Count()) {
     return candidate.GetItems().Count() > current_best.GetItems().Count();
   }
-  return candidate.GetVolumeUtilisation() > current_best.GetVolumeUtilisation();
+  if (candidate.GetVolumeUtilisation() != current_best.GetVolumeUtilisation()) {
+    return candidate.GetVolumeUtilisation() > current_best.GetVolumeUtilisation();
+  }
+  // Mirrors BoxPacker's DefaultPackedBoxSorter's third tiebreak -- same
+  // item count and utilisation can still mean different used volume when
+  // the candidates are different box types.
+  return candidate.GetUsedVolume() > current_best.GetUsedVolume();
 }
 
 }  // namespace

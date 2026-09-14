@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 #include "BoxList.h"
@@ -607,40 +608,48 @@ TEST(WeightRedistributor, EmptyAndAlreadyBalancedResultsRemainStable) {
   EXPECT_DOUBLE_EQ(result.GetWeightVariance(), 0.0);
 }
 
-TEST(VolumePacker, EveryPlacedItemRestsOnTheFloorOrOnItemsBelow) {
-  // A/B fill the bottom half in two shelves; C would naively land in the
-  // air beside B on a fresh layer. The support check must instead push it
-  // down into the floor-level gap to the right of A (or leave it out).
+TEST(VolumePacker, StabiliserOrdersLayersByDescendingFootprint) {
+  // TALL has the larger volume (90,000 vs 81,000) so it sorts first and,
+  // being the very first item, its own depth (100) sets the first
+  // layer's guideline depth -- filling the whole box height and leaving
+  // no vertical room for WIDE in that layer. WIDE's 90x90 footprint
+  // can't share TALL's layer sideways either (TALL already claims the
+  // full 100x100 floor for that layer), so WIDE is forced into its own,
+  // second layer, built AFTER TALL despite having the much bigger
+  // footprint (8,100 vs 900). LayerStabiliser -- BoxPacker's actual
+  // gravity mechanism, which supersedes this project's earlier per-item
+  // 75%-support-ratio check -- reorders whole layers by descending
+  // footprint and re-stacks their Z contiguously from the floor, so the
+  // build order must get corrected: WIDE ends up at z=0, TALL on top.
   ItemList items;
-  items.Insert(MakeItem("A", 60, 100, 50, 1));
-  items.Insert(MakeItem("B", 60, 100, 50, 1));
-  items.Insert(MakeItem("C", 30, 30, 30, 1));
-  items.Insert(MakeItem("D", 25, 25, 25, 1));
-  items.Insert(MakeItem("E", 25, 25, 25, 1));
+  items.Insert(MakeItem("TALL", 30, 30, 100, 1, Rotation::kNever));
+  items.Insert(MakeItem("WIDE", 90, 90, 10, 1, Rotation::kNever));
 
   const fitsolver::PackedBox packed =
-      fitsolver::VolumePacker(MakeBox("BOX", 100, 100, 100)).Pack(items);
+      fitsolver::VolumePacker(MakeBox("BOX", 100, 100, 110)).Pack(items);
   const auto& placed = packed.GetItems().ToVector();
-  ASSERT_FALSE(placed.empty());
-  ASSERT_TRUE(std::any_of(placed.begin(), placed.end(),
-                          [](const auto& item) { return item.GetZ() > 1e-6; }))
-      << "fixture must exercise support above the floor";
+  ASSERT_EQ(placed.size(), 2u);
 
-  for (const auto& it : placed) {
-    if (it.GetZ() <= 1e-6) continue;  // resting on the box floor
-    const double base = it.GetWidth() * it.GetLength();
-    double covered = 0.0;
-    for (const auto& other : placed) {
-      if (&other == &it) continue;
-      if (std::abs((other.GetZ() + other.GetDepth()) - it.GetZ()) > 1e-6) continue;
-      const double ox = std::max(it.GetX(), other.GetX());
-      const double oy = std::max(it.GetY(), other.GetY());
-      const double ex = std::min(it.GetX() + it.GetWidth(), other.GetX() + other.GetWidth());
-      const double ey = std::min(it.GetY() + it.GetLength(), other.GetY() + other.GetLength());
-      if (ex > ox && ey > oy) covered += (ex - ox) * (ey - oy);
+  std::unordered_map<std::string, double> z_by_code;
+  for (const auto& it : placed) z_by_code[it.GetItem()->GetItemCode()] = it.GetZ();
+  EXPECT_DOUBLE_EQ(z_by_code["WIDE"], 0.0) << "the larger-footprint layer must be stacked first";
+  EXPECT_DOUBLE_EQ(z_by_code["TALL"], 10.0) << "TALL must stack on top of WIDE's layer";
+
+  // No overlaps at all, anywhere -- a hard invariant regardless of layer
+  // order.
+  for (std::size_t i = 0; i < placed.size(); ++i) {
+    for (std::size_t j = i + 1; j < placed.size(); ++j) {
+      const auto& a = placed[i];
+      const auto& b = placed[j];
+      const bool separated = a.GetX() + a.GetWidth() <= b.GetX() + 1e-6 ||
+                              b.GetX() + b.GetWidth() <= a.GetX() + 1e-6 ||
+                              a.GetY() + a.GetLength() <= b.GetY() + 1e-6 ||
+                              b.GetY() + b.GetLength() <= a.GetY() + 1e-6 ||
+                              a.GetZ() + a.GetDepth() <= b.GetZ() + 1e-6 ||
+                              b.GetZ() + b.GetDepth() <= a.GetZ() + 1e-6;
+      EXPECT_TRUE(separated) << a.GetItem()->GetItemCode() << " overlaps "
+                              << b.GetItem()->GetItemCode();
     }
-    EXPECT_GE(covered / base, 0.75 - 1e-6)
-        << it.GetItem()->GetItemCode() << " floats at z=" << it.GetZ();
   }
 }
 
@@ -665,11 +674,16 @@ TEST(VolumePacker, PlacementListIsBottomUp) {
   }
 }
 
-TEST(VolumePacker, AcceptsExactlySeventyFivePercentSupport) {
+TEST(VolumePacker, StackedItemsAreFullySupportedByTheItemBelow) {
+  // BASE fills the whole floor; TOP is the same footprint, so LayerPacker's
+  // recursive "stack on top" region (bounded exactly by BASE's own
+  // width/length) is the only place TOP can go. That region is always a
+  // subset of the item that spawned it, so a stacked item is fully
+  // (not just partially) supported by construction -- a stronger, and
+  // still faithfully-ported, guarantee than this project's old per-item
+  // 75%-support-ratio check.
   ItemList items;
-  // The larger-volume base packs first. Neither item may rotate, and
-  // the top only fits above the base, with 75% of its footprint supported.
-  items.Insert(MakeItem("BASE", 75, 100, 20, 1, Rotation::kNever));
+  items.Insert(MakeItem("BASE", 100, 100, 20, 1, Rotation::kNever));
   items.Insert(MakeItem("TOP", 100, 100, 10, 1, Rotation::kNever));
   const auto packed = fitsolver::VolumePacker(MakeBox("BOX", 100, 100, 30)).Pack(items);
   const auto& placed = packed.GetItems().ToVector();
@@ -681,20 +695,6 @@ TEST(VolumePacker, AcceptsExactlySeventyFivePercentSupport) {
   EXPECT_DOUBLE_EQ(placed[1].GetX(), 0.0);
   EXPECT_DOUBLE_EQ(placed[1].GetY(), 0.0);
   EXPECT_DOUBLE_EQ(placed[1].GetZ(), 20.0);
-}
-
-TEST(VolumePacker, RejectsSupportJustBelowSeventyFivePercent) {
-  ItemList items;
-  // 74.99% is below the threshold by more than its numerical tolerance.
-  // The top cannot fit anywhere on the floor, so it must remain unpacked.
-  items.Insert(MakeItem("BASE", 74.99, 100, 20, 1, Rotation::kNever));
-  items.Insert(MakeItem("TOP", 100, 100, 10, 1, Rotation::kNever));
-  const auto packed = fitsolver::VolumePacker(MakeBox("BOX", 100, 100, 30)).Pack(items);
-  const auto& placed = packed.GetItems().ToVector();
-
-  ASSERT_EQ(placed.size(), 1u);
-  EXPECT_EQ(placed[0].GetItem()->GetItemCode(), "BASE");
-  EXPECT_DOUBLE_EQ(placed[0].GetZ(), 0.0);
 }
 
 TEST(VolumePacker, WrapsAcrossRowsAndLayersWithoutOverlap) {
