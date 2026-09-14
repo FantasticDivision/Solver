@@ -59,3 +59,54 @@ TEST(ItemListClassTest, InsertsSortsCountsAndRemovesItems) {
   items.Remove(small);
   EXPECT_EQ(items.Count(), 1u);
 }
+
+TEST(ItemListClassTest, InsertionRefreshesPreviouslySortedItems) {
+  ItemList items;
+  items.Insert(MakeItem("SMALL", 1, 1, 1, 1));
+  ASSERT_EQ(items.SortedItems().size(), 1u);
+  const auto large = MakeItem("LARGE", 3, 3, 3, 1);
+  items.Insert(large);
+  ASSERT_EQ(items.SortedItems().size(), 2u);
+  EXPECT_EQ(items.SortedItems().front(), large);
+}
+
+TEST(ItemListClassTest, RemovalUsesIdentityWhenCodesAreEqual) {
+  ItemList items;
+  const auto first = MakeItem("SAME", 1, 1, 1, 1);
+  const auto second = MakeItem("SAME", 1, 1, 1, 1);
+  items.Insert(first);
+  items.Insert(second);
+  ASSERT_EQ(items.SortedItems().size(), 2u);
+  items.Remove(first);
+  ASSERT_EQ(items.SortedItems().size(), 1u);
+  EXPECT_EQ(items.SortedItems().front(), second);
+  items.Remove(first);
+  EXPECT_EQ(items.Count(), 1u);
+}
+
+TEST(ItemListClassTest, RemovingPackedItemsPreservesUnpackedCopies) {
+  ItemList items;
+  const auto first = MakeItem("SAME", 1, 1, 1, 1);
+  const auto second = MakeItem("SAME", 1, 1, 1, 1);
+  items.Insert(first);
+  items.Insert(second);
+  ASSERT_EQ(items.SortedItems().size(), 2u);
+  fitsolver::PackedItemList packed;
+  packed.Insert(fitsolver::test::MakePackedItem(first));
+  items.RemovePacked(packed);
+  ASSERT_EQ(items.SortedItems().size(), 1u);
+  EXPECT_EQ(items.SortedItems().front(), second);
+}
+
+TEST(ItemListClassTest, LinkedGroupCountsUpdateAfterRemoval) {
+  ItemList items;
+  const auto linked = std::make_shared<ConcreteLinkedItem>(
+      ConcreteItem("A", "A", 1, 1, 1, 1), "GROUP");
+  items.Insert(linked);
+  items.Insert(MakeItem("PLAIN", 1, 1, 1, 1));
+  EXPECT_TRUE(items.HasLinkedItems());
+  EXPECT_EQ(items.GetLinkedGroupCounts().at("GROUP"), 1);
+  items.Remove(linked);
+  EXPECT_FALSE(items.HasLinkedItems());
+  EXPECT_TRUE(items.GetLinkedGroupCounts().empty());
+}
