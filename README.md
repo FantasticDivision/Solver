@@ -114,13 +114,19 @@ j.contains(...) guards both keys, so a request with an empty/missing items or bo
 
 ## Architecture
 
-See the class diagrams below for the shape of it -- but the short
-version: `Item`/`Box` are interfaces (implement your own, or use the
-ready-made `Concrete*` versions), `ItemList`/`BoxList` are how items and
-boxes get passed around, and `Packer` is the one entry point that ties
-everything together.
+Four diagrams, each answering one question: what are the core types
+(data model), how do you change packing behaviour without touching the
+algorithm (sorting strategies), how does a request actually become
+boxes (packing engine), and how does anything *outside* this repo get
+to any of it (the library boundary). Short version: `Item`/`Box` are
+interfaces (implement your own, or use the ready-made `Concrete*`
+versions), `ItemList`/`BoxList` are how items and boxes get passed
+around and ordered, `Packer` is the one entry point that ties the
+algorithm together, and everything external goes through `fitsolver_lib`
+(C ABI), `fitsolver` (the Python extension), or `fitsolver_app` (the
+CLI) -- never the C++ classes directly.
 
-### Data model: Item, Box, and the collections that hold them
+### 1. Data model: what an Item and a Box are
 
 ```mermaid
 classDiagram
@@ -128,20 +134,13 @@ classDiagram
         <<interface>>
         +GetItemCode() string
         +GetWidth() double
-        +GetLength() double
-        +GetDepth() double
         +GetWeight() double
         +GetAllowedRotation() Rotation
-        +GetVolume() double
-        +ToJson() json
     }
     class LinkedItem {
         <<interface>>
         +GetBoxGroup() string
     }
-    class ConcreteItem
-    class ConcreteLinkedItem
-
     Item <|-- LinkedItem : extends
     Item <|.. ConcreteItem : implements
     LinkedItem <|.. ConcreteLinkedItem : implements
@@ -150,68 +149,83 @@ classDiagram
     class Box {
         <<interface>>
         +GetReference() string
-        +GetWidth() double
-        +GetLength() double
-        +GetDepth() double
-        +GetEmptyWeight() double
         +GetMaxWeight() double
         +GetActive() bool
-        +GetInnerVolume() double
-        +ToJson() json
     }
     class LimitedSupplyBox {
         <<interface>>
         +GetQuantityAvailable() int
     }
-    class ConcreteBox
-    class ConcreteLimitedSupplyBox
-
     Box <|-- LimitedSupplyBox : extends
     Box <|.. ConcreteBox : implements
     LimitedSupplyBox <|.. ConcreteLimitedSupplyBox : implements
     ConcreteLimitedSupplyBox *-- ConcreteBox : composes (base)
 
-    class ItemSorter {
-        <<interface>>
-        +Compare(Item, Item) int
+    class Rotation {
+        <<enumeration>>
+        Never
+        KeepFlat
+        BestFit
     }
-    class DefaultItemSorter
-    ItemSorter <|.. DefaultItemSorter
-
-    class ItemList {
-        +Insert(ItemPtr)
-        +Remove(ItemPtr)
-        +SortedItems() ItemPtr[]
-        +HasLinkedItems() bool
-    }
-    ItemList o-- ItemSorter : ordered by
-    ItemList "1" o-- "*" Item : holds
-
-    class BoxSorter {
-        <<interface>>
-        +Compare(Box, Box) int
-    }
-    class DefaultBoxSorter
-    BoxSorter <|.. DefaultBoxSorter
-
-    class BoxList {
-        +Insert(BoxPtr)
-        +SortedBoxes() BoxPtr[]
-    }
-    BoxList o-- BoxSorter : ordered by
-    BoxList "1" o-- "*" Box : holds
+    Item ..> Rotation : how freely it may be reoriented
 ```
 
 `LinkedItem` and `LimitedSupplyBox` are *optional* capabilities layered
 on top of the base interface -- a plain `ConcreteItem` is not a
 `LinkedItem`, so `dynamic_cast<const LinkedItem*>(item.get())` is how
-the rest of the codebase checks "does this particular item need the
-box-group constraint?" without every `Item` needing to carry that field.
-Adding a new capability later (e.g. a constrained-placement item) means
-adding one new interface + one dynamic_cast check, not touching any of
-the classes above.
+the rest of the codebase checks "does this particular item carry a
+BoxGroup?" without every `Item` needing to carry that field. Adding a
+new capability later (e.g. a fragile/this-way-up item) means adding one
+new interface + one dynamic_cast check, not touching any class above.
+Note `LinkedItem` is a *segregation* constraint, not a togetherness
+one: `Packer` (diagram 3) keeps two different `BoxGroup`s from ever
+sharing one box, but a single group's units are free to spread across
+as many boxes as it takes.
 
-### Packing engine: how a request actually gets turned into boxes
+### 2. Sorting strategies: swap packing *behaviour* without touching the algorithm
+
+```mermaid
+classDiagram
+    class ItemSorter {
+        <<interface>>
+        +Compare(Item, Item) int
+    }
+    ItemSorter <|.. DefaultItemSorter : groups clustered, then largest volume first
+    ItemSorter <|.. EntropyItemSorter : + awkward-shaped items break ties first
+
+    class BoxSorter {
+        <<interface>>
+        +Compare(Box, Box) int
+    }
+    BoxSorter <|.. DefaultBoxSorter : smallest volume first
+    BoxSorter <|.. EntropyBoxSorter : + cube-like boxes break ties first
+
+    class PackedBoxSorter {
+        <<interface>>
+        +Compare(PackedBox, PackedBox) int
+    }
+    PackedBoxSorter <|.. DefaultPackedBoxSorter : most items packed wins
+
+    class ItemList {
+        +Insert(ItemPtr)
+        +SortedItems() ItemPtr[]
+    }
+    class BoxList {
+        +Insert(BoxPtr)
+        +SortedBoxes() BoxPtr[]
+    }
+    ItemList o-- ItemSorter : ordered by (Default, unless told otherwise)
+    BoxList o-- BoxSorter : ordered by (Default, unless told otherwise)
+```
+
+Every sorter is a one-method interface, and `ItemList`/`BoxList` take
+one as a constructor argument -- that's the whole extension point. The
+`Entropy*` sorters are a drop-in **alternative** to the `Default*`
+ones (pass one to the constructor to opt in); nothing in this codebase
+uses them by default. Changing how items get prioritised, or which box
+gets tried first, never means touching `Packer` or `VolumePacker`.
+
+### 3. Packing engine: how a request actually gets turned into boxes
 
 ```mermaid
 classDiagram
@@ -242,7 +256,6 @@ classDiagram
     class VoidFinder {
         +Find(...) VoidSpace[]
     }
-    class VoidSpace
     class WorkingVolume
     Box <|.. WorkingVolume : implements
 
@@ -250,31 +263,68 @@ classDiagram
     VoidFinder ..> VoidSpace : produces
     VolumePacker ..> WorkingVolume : wraps a gap as, to sub-pack into
 
+    class OrientatedItem {
+        +GetOrientationCode() string
+        +IsRotated() bool
+    }
+    Item ..> OrientatedItem : GenerateOrientations() tries each Rotation-allowed layout
+
     class PackedItem {
         +x double
         +y double
         +z double
-        +GetOrientationCode() string
     }
-    class PackedItemList
+    PackedItem *-- OrientatedItem : placed at a position, in one orientation
+
     class PackedBox {
         +GetWeight() double
         +GetVolumeUtilisation() double
     }
-    class PackedBoxList
-
     PackedItemList "1" o-- "*" PackedItem
     PackedBox "1" *-- "1" PackedItemList
     PackedBoxList "1" o-- "*" PackedBox
     VolumePacker ..> PackedBox : produces
 ```
 
-`Packer` never talks to geometry directly -- it just keeps asking
-`VolumePacker` "how much of what's left fits in one of these?" for each
-active box type and keeps the best answer. `VolumePacker` does a greedy
-shelf pass, then uses `VoidFinder`/`WorkingVolume` to squeeze more items
-into whatever rectangular gaps are left over. See "How the algorithm
-works" below for the full walkthrough.
+`Packer` never touches geometry directly -- each round it just asks
+`VolumePacker` "how much of what's left fits in a fresh one of these?"
+for every active box type, keeps whichever answer is best (most items,
+ties broken by utilisation), and repeats until nothing more fits.
+`VolumePacker` does a greedy shelf pass (an `OrientatedItem` per
+placement -- the specific rotation an `Item` ended up in), then uses
+`VoidFinder`/`WorkingVolume` to squeeze more items into whatever
+rectangular gaps are left over. See "How the algorithm works" below for
+the full walkthrough.
+
+### 4. The library boundary: how anything outside `src/` calls this
+
+```mermaid
+flowchart LR
+    subgraph engine ["This repo's src/"]
+        core["fitsolver_core<br/>Packer + PackRequest/PackResponse"]
+    end
+
+    core --> lib["fitsolver_lib<br/>plain C ABI (.dll / .so)<br/>fitsolver_solve / fitsolver_free"]
+    core --> pymod["fitsolver<br/>pybind11 Python extension<br/>(.pyd / .so)"]
+    core --> cli["fitsolver_app<br/>CLI — JSON on stdin, JSON on stdout"]
+
+    lib --> client["fitsolver-client<br/>pure-Python ctypes wrapper<br/>published on PyPI"]
+    client --> portal["fantastic-portal backend<br/>app/solver.py"]
+
+    pymod -.-> pyDirect["Any Python caller<br/>import fitsolver"]
+    lib -.-> otherLang["Any other language<br/>via its own FFI/ctypes"]
+```
+
+Nothing outside `src/` ever touches a C++ class from the first three
+diagrams directly -- every consumer goes through one of exactly three
+doors, all built from the same `fitsolver_core`, all sharing the same
+JSON request/response contract (see below). The portal doesn't even use
+the Python extension: it depends on **`fitsolver-client`**, a small
+pure-Python package with no C++ toolchain to install (its wheel vendors
+the compiled `fitsolver_lib` for you) that wraps the C ABI in one call:
+`fitsolver_client.solve(dict) -> dict`. See "Also included: a plain C
+ABI and a CLI" and "Python bindings" below for the full detail on each
+door.
 
 ## Python bindings (the `fitsolver` module)
 
@@ -517,7 +567,6 @@ This renders as a live green/red badge showing the current build
 status — useful evidence to show in sprint reviews.
 
 ## Notes
-
 - `FetchContent` downloads GoogleTest fresh on first configure, so the
   very first CI run will be a little slower (subsequent runs can be
   sped up later with `actions/cache` on the `build/_deps` directory if
@@ -529,7 +578,6 @@ status — useful evidence to show in sprint reviews.
   (openssl, zlib, uuid, jsoncpp) so it won't need changes for that.
 
 ## CD — Docker image to GHCR
-
 `.github/workflows/cd.yml` is triggered by the **CI workflow finishing
 on `main`**, not by push directly — so it only ever runs against a
 commit CI has actually verified (`if: ... workflow_run.conclusion ==
