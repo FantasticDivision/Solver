@@ -492,8 +492,19 @@ are optional on boxes (defaults: 0 empty weight, active, unlimited
 quantity) -- but every box **must** include `MaxWeight`; there's no
 "unlimited weight" box, so a request with a box missing `MaxWeight` is
 rejected. `AllowedRotation` is one of `"Never"`, `"KeepFlat"`, `"BestFit"`.
-`ItemCode` must be unique across the request. Items sharing a
-non-empty `BoxGroup` are always kept together in the same box.
+`ItemCode` must be unique across the request.
+
+`MaxWeight` is the box's **gross** limit -- what it may weigh once
+filled, box included -- matching BoxPacker's `Box::getMaxWeight()`. The
+weight available for contents is therefore `MaxWeight - BoxWeight`. If
+you are transcribing a supplier's table that quotes a *contents* limit
+instead, add the box's own weight to it first; getting this backwards
+silently shrinks every box by its own tare.
+
+A non-empty `BoxGroup` means "never share a box with a *different*
+group". A single group's items are free to spread across as many boxes
+as they need, and ungrouped items are compatible with any group -- so a
+box holds at most one distinct group, plus any ungrouped items.
 
 Response (`fitsolver.solve()` / `.to_json()` / `.to_dict()`):
 

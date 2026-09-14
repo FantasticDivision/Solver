@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <fstream>
+#include <map>
 #include <set>
 #include <sstream>
 #include <string>
@@ -151,44 +152,51 @@ TEST(ThommeaxBenchmark, Chaotic) {
   //    the sort direction placed ANVIL correctly: 7 -> 5 unplaced
   //    (GLASS x3, LEAD x2).
   //
-  // The last 5 turned out to be a data bug, not an engine bug: GLASS's
-  // and LEAD's own reported gross weights in this file's original
-  // version (6.00kg into a 5kg-MaxWeight Large Cube; 4.20kg into a
-  // 4kg-MaxWeight Picture Box) exceed their own box's MaxWeight --
-  // impossible under LayerPacker.php's `$boxWeightCapacity =
-  // getMaxWeight() - getEmptyWeight()`, the exact formula this engine
-  // already used and PackedBox.php's own `assert($this->getWeight() <=
-  // $this->box->getMaxWeight())` invariant. Corrected boxes.json's Large
-  // Cube MaxWeight 5 -> 6 and Picture Box MaxWeight 4 -> 4.5 (the
-  // minimum needed to make each box's own documented gross weight
-  // achievable), not the engine's weight-capacity formula.
-  //
   // 77 -> 75: VolumePacker/LayerPacker/OrientatedItemFactory/
   // OrientatedItemSorter/LayerStabiliser were then rewritten as a
   // faithful port of BoxPacker's actual layer-packing engine (previously
   // this project used a simpler single-scan shelf+void-fill approach),
   // to close the density gap -- see those classes' headers.
   //
-  // The remaining 75 vs 67 is not a confirmed bug: an isolated
-  // Golf-Bag-Box-only experiment (unlimited quantity, no competing box
-  // types) confirms the engine DOES mix CORROSIVE items in with
-  // ungrouped ones when given enough attempts, so nothing structurally
-  // prevents it. With the real box catalog's `max 12` Golf Bag Box quota
-  // in play, this port's per-box packing places slightly MORE ungrouped
-  // items per box on average than the reference (182 vs 165 across the
-  // same 12 boxes), which paradoxically exhausts that quota one round
-  // sooner -- before the 8x ACID / 6x JUG CORROSIVE units get a turn --
-  // forcing them into dedicated small boxes instead of riding along in a
-  // Golf Bag Box the way the reference's packing does. Closing this
-  // fully would mean matching the reference's per-round item count
-  // exactly, which needs item-by-item diffing against its output, not a
-  // confirmable structural fix.
+  // 75 -> 69: the last 5 unplaced had been blamed on two box weights
+  // being mistranscribed, but the real bug was bigger and covered every
+  // box in all three scenarios. RESULTS.md's `Max Weight` column is a
+  // *contents* limit -- its `Gross` column is contents plus the box's
+  // own weight, and box 1 sits exactly on it (20.00 - 2.0 = 18.00
+  // against an 18) -- while FitSolver's `MaxWeight`, like BoxPacker's
+  // `Box::getMaxWeight()` which `LayerPacker` budgets as
+  // `getMaxWeight() - getEmptyWeight()`, is *gross*. The fixtures had
+  // that column copied straight across, understating every box by its
+  // own tare (2kg per Golf Bag Box), which made the reference's own box
+  // 1 unachievable here. Converting all three to
+  // `MaxWeight = contents + BoxWeight` also left Simple and
+  // SemiRealistic matching the reference exactly.
+  //
+  // The remaining 69 vs 67 is not a confirmed engine bug. Every decision
+  // point has since been diffed against boxpacker 4.3 (the version that
+  // produced this table) -- item/box/packed-box sorters, permutation
+  // generation, the stability filter, layer packing, weight capacity and
+  // the Packer loop all match. The residual gap is greedy myopia that
+  // boxpacker shares: a heavy filler (e.g. a 2.9kg SHOT) claims a side
+  // gap in a Large Cube and poisons its 5kg contents budget for further
+  // flat items that would have stacked there. RESULTS.md's own header
+  // says the reference was produced in two passes ("FOOD packs
+  // separately"); reproducing that split naively does reach 67, but only
+  // by spending a third Standard Carton against a `max 2` limit, and a
+  // quota-correct two-pass run comes out at 70 -- worse than this one.
   const fitsolver::PackResponse response = PackScenario("Chaotic");
   ExpectEveryScenarioUnitPlaced("Chaotic", response, 300);
 
   EXPECT_TRUE(response.unplaced_items.Empty())
       << response.unplaced_items.Count() << " unit(s) left unplaced";
-  EXPECT_LE(response.boxes.Count(), 78u)
+  EXPECT_LE(response.boxes.Count(), 70u)
       << "used " << response.boxes.Count() << " boxes; reference used 67 "
       << "(box-count parity is a known, separate gap -- see comment above)";
+
+  // Box quantity limits are what make the box count meaningful -- a run
+  // that quietly overspends them can "beat" the reference on paper.
+  std::map<std::string, int> used;
+  for (const auto& box : response.boxes) ++used[box.GetBox()->GetReference()];
+  EXPECT_LE(used["Golf Bag Box"], 12) << "Golf Bag Box is limited to 12";
+  EXPECT_LE(used["Standard Carton"], 2) << "Standard Carton is limited to 2";
 }

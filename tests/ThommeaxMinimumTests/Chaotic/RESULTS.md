@@ -2,16 +2,28 @@
 
 Packed with [dvdoug/boxpacker](https://github.com/dvdoug/boxpacker) 4.3 on PHP 8.4. Runtime ~0.2s. Items with no BoxGroup can share a box with any group, so they pack in the same pass as the largest group (CORROSIVE); FOOD packs separately. See [SCENARIO.md](SCENARIO.md) for the traps built into this dataset.
 
-**Correction:** Picture Box's and Large Cube's `Max Weight` below were
-originally transcribed as 4 and 5 (kg). Boxes 59/60 (Picture Box + 1×
-LEAD, 4.20kg gross) and 61–63 (Large Cube + 1× GLASS, 6.00kg gross)
-further down this file both report a gross weight that *exceeds* those
-figures, which the packer this table credits cannot itself produce
-(`getWeight() <= getMaxWeight()` is an asserted invariant in
-dvdoug/boxpacker's own `PackedBox.php`). Corrected to the minimum values
-that make every row in this file achievable: Picture Box 4 → 4.5,
-Large Cube 5 → 6. `boxes.json` matches this corrected table, not the
-original one.
+**Note on weights — this table vs `boxes.json`.** The `Max Weight (kg)`
+column below is the maximum **contents** weight, and the `Gross (kg)`
+column further down is contents *plus* that box's own `Box Weight`.
+Every row is consistent with that reading, including two sitting exactly
+on the limit: box 1 (Golf Bag Box, 20.00 gross − 2.0 box = **18.00**
+contents, against an 18 `Max Weight`) and box 22 (Poster Tube, 3.40 −
+0.4 = **3.00**, against a 3).
+
+FitSolver's `MaxWeight` field means something different: the **gross**
+limit, matching dvdoug/boxpacker's own `Box::getMaxWeight()`, which its
+`LayerPacker` (4.3 and current alike) turns into a contents budget as
+`getMaxWeight() - getEmptyWeight()`. So `boxes.json` carries
+`MaxWeight = <this table's Max Weight> + <Box Weight>` for every box —
+Golf Bag Box 18 + 2.0 = 20, Large Cube 5 + 1.5 = 6.5, and so on.
+
+Transcribing this column straight across (as the fixture first did)
+understates every box's real capacity by its own tare — 2kg per Golf Bag
+Box here — which made the reference's own box 1 unachievable and cost
+about six extra boxes before it was caught. An earlier attempt to
+reconcile it by nudging just Picture Box (4 → 4.5) and Large Cube
+(5 → 6) was this same bug diagnosed from the wrong model, and has been
+replaced by the conversion above.
 
 ## Box candidates (in)
 

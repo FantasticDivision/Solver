@@ -3,7 +3,15 @@
 Three benchmark scenarios (`Simple`, `SemiRealistic`, `Chaotic`) supplied by
 Thommeax. Each folder has:
 
-- `boxes.json` — candidate box types, in FitSolver's wire format.
+- `boxes.json` — candidate box types, in FitSolver's wire format. **Watch the
+  weight column when transcribing from a `RESULTS.md` table:** its
+  `Max Weight (kg)` is the maximum *contents* weight, whereas FitSolver's
+  `MaxWeight` (like dvdoug/boxpacker's `Box::getMaxWeight()`) is the *gross*
+  limit that the engine turns into a contents budget as
+  `MaxWeight - BoxWeight`. So `boxes.json` carries
+  `MaxWeight = <table's Max Weight> + <Box Weight>`. Copying the column
+  across unchanged silently understates every box by its own tare, and costs
+  real boxes — see Chaotic's `RESULTS.md` for how that played out there.
 - `items.json` — item types. Unlike a real FitSolver request, each entry may
   carry a `Quantity` (how many physical units of that item to pack) since
   that's how the reference data was authored; `tests/integration/

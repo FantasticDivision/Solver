@@ -39,6 +39,11 @@ class ItemList {
   // Items in sorter-preferred order (index 0 = highest priority).
   const std::vector<ItemPtr>& SortedItems() const;
 
+  // The ordering this list was built with, so a derived list (e.g. a
+  // filtered subset being repacked) keeps the caller's chosen priority
+  // instead of silently reverting to DefaultItemSorter.
+  const std::shared_ptr<const ItemSorter>& GetSorter() const { return sorter_; }
+
   std::vector<ItemPtr>::const_iterator begin() const { return SortedItems().begin(); }
   std::vector<ItemPtr>::const_iterator end() const { return SortedItems().end(); }
 

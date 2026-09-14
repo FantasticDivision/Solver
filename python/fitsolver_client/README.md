@@ -17,7 +17,7 @@ pip install fitsolver-client
 
 ```
 # requirements.txt / pyproject.toml
-fitsolver-client>=0.5.0
+fitsolver-client>=0.6.0
 ```
 
 One wheel is published per OS (Linux `manylinux_2_28`, macOS x86_64 +

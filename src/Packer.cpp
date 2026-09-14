@@ -21,32 +21,53 @@ namespace {
 // each mixed with ungrouped items -- see
 // tests/ThommeaxMinimumTests/Chaotic/RESULTS.md.)
 //
-// If a candidate box's shelf-fill happened to place items from more than
-// one group (DefaultItemSorter tries grouped items first, so this is
-// common on a mixed load), keep only the best-represented group's items
-// -- plus every ungrouped item, which are always compatible -- and
-// return the rest to unplaced for another box to pick up.
-void EnforceGroupSegregation(PackedBox& candidate) {
+// A candidate box's fill commonly ends up holding items from more than
+// one group, since VolumePacker just works down the sorted queue and has
+// no group concept of its own. When that happens, keep the group the
+// item sorter itself ranks highest (the first one reached walking
+// `remaining` in priority order) and REPACK the box with every other
+// group's items excluded -- mirroring BoxPacker's own
+// LinkedItemGroupEnforcer, which likewise excludes the offending
+// group(s) and repacks "so the freed space can be used by other eligible
+// items".
+//
+// Repacking, rather than just deleting the offending items in place,
+// is what makes this correct rather than merely legal: deleting leaves
+// the box with holes where they were, and -- because the deleted items
+// are whichever group happened to lose -- it also silently overrides the
+// sorter's priority. A lower-priority group that had grabbed more slots
+// would evict a higher-priority one that the sorter had deliberately put
+// first, stranding the latter in boxes of its own later on.
+PackedBox EnforceGroupSegregation(PackedBox candidate, const ItemList& remaining) {
+  if (!remaining.HasLinkedItems()) return candidate;
+
   const auto counts = candidate.GetItems().GetLinkedGroupCounts();
-  if (counts.size() <= 1) return;  // 0 or 1 distinct group present: nothing to resolve
+  if (counts.size() <= 1) return candidate;  // 0 or 1 group present: nothing to resolve
 
+  // Highest-priority group present, per the sorter's own ordering --
+  // never a raw count, and never a hardcoded rule about group names.
   const std::string* keep_group = nullptr;
-  int best_count = -1;
-  for (const auto& [group, count] : counts) {
-    if (count > best_count) {
-      best_count = count;
-      keep_group = &group;
+  for (const auto& item : remaining.SortedItems()) {
+    const auto* linked = dynamic_cast<const LinkedItem*>(item.get());
+    if (linked != nullptr && counts.count(linked->GetBoxGroup()) > 0) {
+      keep_group = &linked->GetBoxGroup();
+      break;
     }
   }
+  if (keep_group == nullptr) return candidate;
 
-  PackedBox rebuilt(candidate.GetBox());
-  for (const auto& packed_item : candidate.GetItems()) {
-    if (const auto* linked = dynamic_cast<const LinkedItem*>(packed_item.GetItem().get())) {
-      if (linked->GetBoxGroup() != *keep_group) continue;
-    }
-    rebuilt.AddItem(packed_item);
+  // Ungrouped items are compatible with anything, so they stay eligible.
+  ItemList eligible(remaining.GetSorter());
+  for (const auto& item : remaining) {
+    const auto* linked = dynamic_cast<const LinkedItem*>(item.get());
+    if (linked != nullptr && linked->GetBoxGroup() != *keep_group) continue;
+    eligible.Insert(item);
   }
-  candidate = std::move(rebuilt);
+  if (eligible.Empty()) return PackedBox(candidate.GetBox());
+
+  // `eligible` holds at most one group, so the repack can't reintroduce
+  // a second one -- no need for BoxPacker's iterative exclusion loop.
+  return VolumePacker(candidate.GetBox()).Pack(eligible);
 }
 
 bool IsBetterCandidate(const PackedBox& candidate, const PackedBox& current_best) {
@@ -87,8 +108,7 @@ PackResponse Packer::Pack(const ItemList& items, const BoxList& boxes) const {
       }
 
       VolumePacker volume_packer(box);
-      PackedBox candidate = volume_packer.Pack(remaining);
-      EnforceGroupSegregation(candidate);
+      PackedBox candidate = EnforceGroupSegregation(volume_packer.Pack(remaining), remaining);
       if (candidate.GetItems().Count() == 0) continue;
 
       if (!best.has_value() || IsBetterCandidate(candidate, *best)) {
