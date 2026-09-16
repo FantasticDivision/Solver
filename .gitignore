@@ -79,6 +79,7 @@ Testing/
 __pycache__/
 *.egg-info/
 dist/
+wheels/
 # Native lib vendored into the wheel at build time (tools/vendor_lib.py);
 # the *.dll/*.so/*.dylib rules above already match the files themselves.
 python/fitsolver_client/fitsolver_client/_libs/

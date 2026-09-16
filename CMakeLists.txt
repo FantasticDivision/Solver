@@ -187,6 +187,7 @@ endif()
 # On by default; turn it off with -DFITSOLVER_BUILD_PYTHON=OFF in
 # environments with no Python development headers available (e.g. the
 # slim production Docker image, which only ships the fitsolver_app CLI).
+
 option(FITSOLVER_BUILD_PYTHON "Build the fitsolver Python extension module" ON)
 
 if(FITSOLVER_BUILD_PYTHON)
@@ -200,4 +201,14 @@ if(FITSOLVER_BUILD_PYTHON)
 
   pybind11_add_module(fitsolver src/pymodule.cpp)
   target_link_libraries(fitsolver PRIVATE fitsolver_core)
+  install(TARGETS fitsolver
+    LIBRARY DESTINATION python/fitsolver
+    RUNTIME DESTINATION python/fitsolver
+  )
+  install(
+    DIRECTORY ${CMAKE_SOURCE_DIR}/python/fitsolver/
+    DESTINATION fitsolver
+    FILES_MATCHING
+    PATTERN "*.json"
+  )
 endif()
