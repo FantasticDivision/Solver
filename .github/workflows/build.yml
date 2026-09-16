@@ -2,7 +2,7 @@ name: Build wheels
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main", "will" ]
 
 jobs:
   build_wheels:
