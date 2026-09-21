@@ -43,7 +43,7 @@ std::vector<OrientatedItem> OrientatedItemFactory::GetPossibleOrientations(
 }
 
 std::optional<OrientatedItem> OrientatedItemFactory::GetBestOrientation(
-    const ItemPtr& item, const OrientatedItem* prev_item, const std::vector<ItemPtr>& next_items,
+    const ItemPtr& item, const OrientatedItem* prev_item, const PackQueue& next_items,
     double width_left, double length_left, double depth_left, double row_length,
     bool consider_stability) const {
   auto possible = GetPossibleOrientations(item, prev_item, width_left, length_left, depth_left);

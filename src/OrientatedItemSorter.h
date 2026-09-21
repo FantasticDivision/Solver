@@ -5,6 +5,7 @@
 
 #include "Item.h"
 #include "OrientatedItem.h"
+#include "PackQueue.h"
 
 namespace fitsolver {
 
@@ -21,7 +22,7 @@ class OrientatedItemSorter {
  public:
   OrientatedItemSorter(const OrientatedItemFactory& factory, bool single_pass_mode,
                         double width_left, double length_left, double depth_left,
-                        const std::vector<ItemPtr>& next_items, double row_length);
+                        const PackQueue& next_items, double row_length);
 
   // std::sort-compatible: true if `a` should be ordered before `b`.
   bool operator()(const OrientatedItem& a, const OrientatedItem& b) const {
@@ -44,7 +45,7 @@ class OrientatedItemSorter {
   double width_left_;
   double length_left_;
   double depth_left_;
-  const std::vector<ItemPtr>& next_items_;
+  const PackQueue& next_items_;
   double row_length_;
   mutable std::optional<bool> all_remaining_same_size_cache_;
 };

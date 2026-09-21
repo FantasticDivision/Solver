@@ -7,6 +7,7 @@
 #include "Box.h"
 #include "Item.h"
 #include "OrientatedItem.h"
+#include "PackQueue.h"
 
 namespace fitsolver {
 
@@ -42,7 +43,7 @@ class OrientatedItemFactory {
   // (in Y) the current shelf row already is.
   std::optional<OrientatedItem> GetBestOrientation(const ItemPtr& item,
                                                     const OrientatedItem* prev_item,
-                                                    const std::vector<ItemPtr>& next_items,
+                                                    const PackQueue& next_items,
                                                     double width_left, double length_left,
                                                     double depth_left, double row_length,
                                                     bool consider_stability) const;

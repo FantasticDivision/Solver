@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <vector>
 
@@ -37,6 +38,13 @@ class WeightRedistributor {
   std::optional<PackedBox> RepackSingleBox(const std::vector<ItemPtr>& items) const;
 
   BoxList boxes_;
+
+  // Redistribute() rescans every box pair from the start after each
+  // successful move, so the same "would these items fit one box?" question
+  // (same items, same order) is asked over and over for boxes a move never
+  // touched. VolumePacker is deterministic for a given ordered input, so
+  // remembering the answer is exact, not approximate.
+  mutable std::map<std::vector<const Item*>, std::optional<PackedBox>> repack_cache_;
 };
 
 }  // namespace fitsolver

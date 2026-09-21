@@ -78,6 +78,14 @@ add_executable(fitsolver_timed_test EXCLUDE_FROM_ALL
 )
 target_link_libraries(fitsolver_timed_test PRIVATE fitsolver_core)
 
+# Scenario timing + output fingerprint (see tests/manual/scenario_bench.cpp).
+add_executable(fitsolver_scenario_bench EXCLUDE_FROM_ALL
+  tests/manual/scenario_bench.cpp
+)
+target_link_libraries(fitsolver_scenario_bench PRIVATE fitsolver_core)
+target_compile_definitions(fitsolver_scenario_bench PRIVATE
+  FITSOLVER_THOMMEAX_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/ThommeaxMinimumTests")
+
 # --- CLI executable (reads a JSON request from stdin, prints the response)
 add_executable(fitsolver_app src/main.cpp)
 target_link_libraries(fitsolver_app PRIVATE fitsolver_core)

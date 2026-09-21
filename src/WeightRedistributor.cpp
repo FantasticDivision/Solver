@@ -97,16 +97,45 @@ bool WeightRedistributor::TryEqualiseWeight(std::vector<PackedBox>& boxes, std::
 std::optional<PackedBox> WeightRedistributor::RepackSingleBox(const std::vector<ItemPtr>& items) const {
   if (items.empty()) return std::nullopt;
 
+  std::vector<const Item*> key;
+  key.reserve(items.size());
+  for (const auto& item : items) key.push_back(item.get());
+  if (const auto cached = repack_cache_.find(key); cached != repack_cache_.end()) {
+    return cached->second;
+  }
+
+  double total_volume = 0.0;
+  double total_weight = 0.0;
+  for (const auto& item : items) {
+    total_volume += item->GetVolume();
+    total_weight += item->GetWeight();
+  }
+
   ItemList item_list;
   for (const auto& item : items) item_list.Insert(item);
 
+  std::optional<PackedBox> found;
   for (const auto& box : boxes_) {
     if (!box->GetActive()) continue;
+
+    // All `items` must be placed for a box to count, and placed items never
+    // overlap and never exceed the weight budget -- so a box whose volume or
+    // weight budget is below the totals cannot succeed. Skipping it returns
+    // the same answer VolumePacker would, without running it.
+    if (total_volume > box->GetWidth() * box->GetLength() * box->GetDepth() * (1.0 + 1e-9)) continue;
+    const double weight_capacity = box->GetWeightCapacityForItems();
+    if (weight_capacity >= 0.0 && total_weight > weight_capacity) continue;
+
     VolumePacker packer(box);
     PackedBox result = packer.Pack(item_list);
-    if (result.GetItems().Count() == items.size()) return result;
+    if (result.GetItems().Count() == items.size()) {
+      found = std::move(result);
+      break;
+    }
   }
-  return std::nullopt;
+
+  repack_cache_.emplace(std::move(key), found);
+  return found;
 }
 
 }  // namespace fitsolver
