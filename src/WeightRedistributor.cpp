@@ -1,6 +1,7 @@
 #include "WeightRedistributor.h"
 
 #include <algorithm>
+#include <chrono>
 
 #include "LinkedItem.h"
 #include "VolumePacker.h"
@@ -12,6 +13,27 @@ double Variance(double a, double b) {
   const double mean = (a + b) / 2.0;
   return (a - mean) * (a - mean);
 }
+
+// Each accepted swap strictly reduces variance *for the pair it was chosen
+// for* (Variance() above is relative to that pair's own mean, not the
+// request's overall target_weight -- matching BoxPacker's own
+// calculateVariance(), which has the same pair-relative shape). That is not
+// a transitive, globally-monotone measure: two boxes can trade an item back
+// and forth as the redistributor keeps re-pairing them against different
+// neighbours in between, each individual move legitimately variance-
+// reducing *for the pair it was made for* while the overall arrangement
+// doesn't converge. Confirmed by construction on an adversarial fixture
+// (see benchmarks/boxpacker_comparison/): the same item object moved
+// box[4]->box[6] and was later moved box[6]->box[4], and neither this port
+// nor BoxPacker's own PHP implementation has anything that rules that out.
+// This is therefore a deadline, not an iteration cap -- capping iterations
+// would just move the same non-termination risk to "how expensive is one
+// iteration" instead of removing it. Weight balancing is a pure
+// optimisation pass over an already-valid, already-complete packing, so
+// timing out mid-pass and keeping whatever arrangement has been reached so
+// far is always safe: it can only leave boxes somewhat less evenly loaded,
+// never break correctness.
+constexpr std::chrono::milliseconds kRedistributionDeadline{250};
 }  // namespace
 
 WeightRedistributor::WeightRedistributor(BoxList boxes) : boxes_(std::move(boxes)) {}
@@ -23,8 +45,10 @@ PackedBoxList WeightRedistributor::Redistribute(const PackedBoxList& original) c
   std::sort(boxes.begin(), boxes.end(),
             [](const PackedBox& a, const PackedBox& b) { return a.GetWeight() > b.GetWeight(); });
 
+  const auto deadline = std::chrono::steady_clock::now() + kRedistributionDeadline;
+
   bool changed = true;
-  while (changed) {
+  while (changed && std::chrono::steady_clock::now() < deadline) {
     changed = false;
     for (std::size_t i = 0; i < boxes.size() && !changed; ++i) {
       for (std::size_t j = i + 1; j < boxes.size() && !changed; ++j) {

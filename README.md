@@ -568,6 +568,92 @@ never mixed). It does not implement exhaustive all-permutations search
 across box choices; that would be a reasonable follow-up if the result
 isn't good enough for a given item set.
 
+### Time complexity
+
+Let `n` be the number of physical items in the request, `b` the number of
+active box types, and `m` the number of boxes the solution actually ends up
+using (`m <= n`, but in practice `m` is small).
+
+- **One placement** (`OrientatedItemFactory::GetBestOrientation`) is O(1):
+  at most 6 candidate orientations are generated and sorted, and the
+  bounded look-ahead each comparison can trigger
+  (`OrientatedItemSorter::CalculateAdditionalItemsPacked`) sub-packs at
+  most 7 upcoming items in a mode that disables any further recursive
+  look-ahead, so it never nests. Repeated look-ahead situations (same
+  remaining space, same upcoming items) are memoised in a thread-local
+  cache, making genuinely repeated placements (e.g. a long run of
+  identical items) O(1) with a very small constant; distinct geometry on
+  every placement still costs only the same bounded constant, never more.
+- **One `VolumePacker::Pack()` call** (fit as much as possible into one
+  fresh box) is O(n) typically: `LayerPacker` pulls items off a queue,
+  placing each in O(1) or deferring it to the next shelf row. Worst case
+  is O(n²) -- an adversarial item mix where nothing shares a row forces a
+  full rescan of what's left on every wrap to a new row.
+- **`Packer::Pack()` as a whole** is **O(m · b · n²) worst case**, O(m · b ·
+  n) typical: its outer loop runs once per box actually used (`m` times),
+  and each time re-tries every active box type (`b`) via a fresh
+  `VolumePacker::Pack()` over whatever's still unplaced.
+- **`WeightRedistributor`** only ever runs when the solution used more
+  than 1 and at most 12 boxes (`Packer::kMaxBoxesToBalanceWeight`), so its
+  own box count is a *constant*, independent of `n` and `m`. It rescans
+  all pairs of boxes for a beneficial item move and restarts that scan
+  from the top after every move it makes -- a shape shared by BoxPacker's
+  own `WeightRedistributor`, whose `calculateVariance()` is the same
+  pair-relative-to-its-own-mean formula ours uses, not relative to the
+  request's overall target. That is not a globally monotone measure:
+  two boxes can trade an item back and forth as the redistributor keeps
+  re-pairing them against different neighbours in between, each move
+  legitimately variance-reducing *for the pair it was made for* while the
+  arrangement as a whole never settles. This was confirmed by
+  construction, not just suspected: `benchmarks/boxpacker_comparison/`'s
+  random-scenario generator produced an input where the exact same item
+  object was moved from one box to another and later moved back, and nothing
+  in either this port or BoxPacker's own implementation rules that out.
+  Rather than an iteration cap (which just moves the question to "how
+  expensive is one iteration"), this phase is bounded by a **250ms
+  wall-clock deadline** -- safe because weight balancing is a pure
+  optimisation pass over an already-complete, already-valid packing, so
+  stopping partway through can only leave boxes somewhat less evenly
+  loaded, never break correctness.
+- **Overall**: **O(m · b · n²)** worst case. The 250ms redistribution
+  deadline is what turns that into a genuine, input-independent ceiling on
+  the whole `Packer::Pack()` call rather than just a typical-case
+  expectation -- see the next section for the measured numbers this
+  produces in practice.
+
+### Benchmark: solve time and box count vs. dvdoug/boxpacker
+
+`benchmarks/boxpacker_comparison/` generates 1000 random packing requests
+and runs each through both this engine and dvdoug/boxpacker 4.3 (the PHP
+reference this port is modelled on), to check two things: that this engine
+is faster on average, and that it never takes a box count dvdoug/boxpacker
+wouldn't also reach. See that directory's own README for how to regenerate
+and re-run it. Latest run (seed 1337, 1000 scenarios, ~60,600 item units
+total):
+
+|                    | fitsolver (this repo) | dvdoug/boxpacker 4.3 |
+|--------------------|-----------------------:|----------------------:|
+| Average solve time |               28.5 ms |               95.3 ms |
+| Median solve time  |               15.0 ms |               46.0 ms |
+| Worst solve time   |              362.6 ms |             2839.3 ms |
+| Scenarios over 1s  |                0/1000 |                5/1000 |
+
+fitsolver is faster on every measure above, and -- because of the
+redistribution deadline described in "Time complexity" -- never comes
+close to the 1-second mark even in its worst case, where dvdoug/boxpacker
+(which has no such deadline applied in this comparison) occasionally does.
+
+Box count is a more mixed result, worth reporting honestly rather than
+rounding up: fitsolver matched dvdoug/boxpacker's box count on 871/1000
+scenarios and used *fewer* boxes on 81/1000, but used *more* boxes on
+48/1000 (typically by 1-2 boxes; the worst case used 6 more). This is the
+same class of gap the Chaotic scenario in `tests/ThommeaxMinimumTests/`
+already documents (69 vs. a 67-box reference) -- greedy layer-packing
+myopia that BoxPacker's own algorithm shares, not a confirmed bug. Closing
+it fully would mean moving past a single greedy pass (e.g. backtracking
+across box-type choices, or an exact solver for small item counts) rather
+than a targeted fix, and hasn't been attempted here.
+
 ### Extending it
 
 Every extension point BoxPacker itself supports is available here the
