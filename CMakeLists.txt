@@ -70,27 +70,35 @@ target_link_libraries(fitsolver_core PUBLIC nlohmann_json)
 # -fPIC").
 set_target_properties(fitsolver_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-# --- Manual end-to-end timing harness ------------------------------------
+# --- Manual timing / benchmark harnesses ---------------------------------
 # Kept out of the default build and CTest because benchmark results should
 # only be collected intentionally (and preferably from a Release build).
-add_executable(fitsolver_timed_test EXCLUDE_FROM_ALL
-  tests/manual/timed_test.cpp
-)
-target_link_libraries(fitsolver_timed_test PRIVATE fitsolver_core)
+# Their sources live under tests/ and benchmarks/, which the production
+# Dockerfile doesn't copy -- and CMake refuses to generate a target whose
+# source is missing even when it's EXCLUDE_FROM_ALL -- so the image build
+# turns this off (see Dockerfile).
+option(FITSOLVER_BUILD_BENCHMARKS "Define the manual timing/benchmark targets" ON)
 
-# Scenario timing + output fingerprint (see tests/manual/scenario_bench.cpp).
-add_executable(fitsolver_scenario_bench EXCLUDE_FROM_ALL
-  tests/manual/scenario_bench.cpp
-)
-target_link_libraries(fitsolver_scenario_bench PRIVATE fitsolver_core)
-target_compile_definitions(fitsolver_scenario_bench PRIVATE
-  FITSOLVER_THOMMEAX_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/ThommeaxMinimumTests")
+if(FITSOLVER_BUILD_BENCHMARKS)
+  add_executable(fitsolver_timed_test EXCLUDE_FROM_ALL
+    tests/manual/timed_test.cpp
+  )
+  target_link_libraries(fitsolver_timed_test PRIVATE fitsolver_core)
 
-# BoxPacker (PHP) comparison harness -- see benchmarks/boxpacker_comparison/.
-add_executable(fitsolver_boxpacker_bench EXCLUDE_FROM_ALL
-  benchmarks/boxpacker_comparison/run_fitsolver.cpp
-)
-target_link_libraries(fitsolver_boxpacker_bench PRIVATE fitsolver_core)
+  # Scenario timing + output fingerprint (see tests/manual/scenario_bench.cpp).
+  add_executable(fitsolver_scenario_bench EXCLUDE_FROM_ALL
+    tests/manual/scenario_bench.cpp
+  )
+  target_link_libraries(fitsolver_scenario_bench PRIVATE fitsolver_core)
+  target_compile_definitions(fitsolver_scenario_bench PRIVATE
+    FITSOLVER_THOMMEAX_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/ThommeaxMinimumTests")
+
+  # BoxPacker (PHP) comparison harness -- see benchmarks/boxpacker_comparison/.
+  add_executable(fitsolver_boxpacker_bench EXCLUDE_FROM_ALL
+    benchmarks/boxpacker_comparison/run_fitsolver.cpp
+  )
+  target_link_libraries(fitsolver_boxpacker_bench PRIVATE fitsolver_core)
+endif()
 
 # --- CLI executable (reads a JSON request from stdin, prints the response)
 add_executable(fitsolver_app src/main.cpp)
