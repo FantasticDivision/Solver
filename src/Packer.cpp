@@ -1,7 +1,6 @@
 #include "Packer.h"
 
 #include <algorithm>
-#include <chrono>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -88,8 +87,6 @@ bool IsBetterCandidate(const PackedBox& candidate, const PackedBox& current_best
   return candidate.GetUsedVolume() > current_best.GetUsedVolume();
 }
 
-using Clock = std::chrono::steady_clock;
-
 // Everything one packing strategy has committed so far. Box counts carry
 // across the passes of a multi-pass strategy, so a quota-limited box type
 // used up in one pass isn't handed out again in the next.
@@ -97,6 +94,9 @@ struct Packing {
   std::vector<PackedBox> boxes;
   std::vector<ItemPtr> unplaced;
   std::unordered_map<std::string, int> used;
+  // Single-box packing attempts made (one VolumePacker run per box type
+  // tried per round) -- the unit the box-group strategies are budgeted in.
+  std::size_t attempts = 0;
 };
 
 // Fewer unplaced items first (placing everything matters more than box
@@ -122,6 +122,7 @@ bool PackPass(ItemList remaining, const std::vector<BoxPtr>& active_boxes, Packi
         if (packing.used[box->GetReference()] >= limited->GetQuantityAvailable()) continue;
       }
 
+      ++packing.attempts;
       VolumePacker volume_packer(box);
       PackedBox candidate = EnforceGroupSegregation(volume_packer.Pack(remaining), remaining);
       if (candidate.GetItems().Count() == 0) continue;
@@ -178,8 +179,6 @@ PackResponse Packer::Pack(const PackRequest& request) const {
 }
 
 PackResponse Packer::Pack(const ItemList& items, const BoxList& boxes) const {
-  const auto started = Clock::now();
-
   std::vector<BoxPtr> active_boxes;
   for (const auto& box : boxes) {
     if (box->GetActive()) active_boxes.push_back(box);
@@ -200,14 +199,20 @@ PackResponse Packer::Pack(const ItemList& items, const BoxList& boxes) const {
   // strategies don't improve pack exactly as before.
   const std::vector<std::string> groups = GroupsBySize(items);
   if (groups.size() >= 2) {
-    const auto deadline = started + kGroupStrategyBudget;
+    // Bounded by work, not wall-clock time: a time budget made the result
+    // depend on how busy the machine was (Chaotic came back 69 instead of
+    // 65 under a loaded test run), and a benchmark result must be the same
+    // everywhere. Counting single-box packing attempts keeps the extra work
+    // proportional to the baseline's and the outcome deterministic.
+    const std::size_t budget = kGroupStrategyWorkFactor * best.attempts;
+    std::size_t spent = 0;
     for (std::size_t host = 0; host < groups.size() && host < kMaxGroupStrategies; ++host) {
-      if (Clock::now() >= deadline) break;
+      if (spent >= budget) break;
 
       // Abandon a strategy once it can't beat the best so far, or once the
-      // time budget is spent.
+      // work budget is spent.
       auto give_up = [&](const Packing& so_far) {
-        if (Clock::now() >= deadline) return true;
+        if (spent + so_far.attempts >= budget) return true;
         return best.unplaced.empty() && so_far.boxes.size() >= best.boxes.size();
       };
 
@@ -217,6 +222,7 @@ PackResponse Packer::Pack(const ItemList& items, const BoxList& boxes) const {
         if (other == host) continue;
         finished = PackPass(Slice(items, &groups[other], false), active_boxes, candidate, give_up);
       }
+      spent += candidate.attempts;
       if (finished && IsBetterPacking(candidate, best)) best = std::move(candidate);
     }
   }

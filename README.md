@@ -605,10 +605,14 @@ using (`m <= n`, but in practice `m` is small).
   that whole packing up to `min(g, 4)` more times, so they multiply it by a
   constant of at most 5, never by `n`. Two more bounds keep that extra work
   cheap: a strategy is abandoned the moment it has used as many boxes as
-  the best result so far with items still left over, and none is started
-  or continued once **400ms** has passed since `Pack()` began. The single
-  pass always runs to completion, so these can only ever improve a
-  result, never withhold one.
+  the best result so far with items still left over, and the strategies
+  between them may make at most **3x as many single-box packing attempts
+  as the single pass did** -- so the extra time is at most ~3x the single
+  pass's. That budget is counted in work, not wall-clock time, on
+  purpose: an earlier time-based budget let a busy machine cut the
+  winning strategy short, so the same request could pack differently on
+  different machines. The single pass always runs to completion, so these
+  can only ever improve a result, never withhold one.
 - **`WeightRedistributor`** only ever runs when the solution used more
   than 1 and at most 12 boxes (`Packer::kMaxBoxesToBalanceWeight`), so its
   own box count is a *constant*, independent of `n` and `m`. It rescans
@@ -634,7 +638,7 @@ using (`m <= n`, but in practice `m` is small).
   through can only leave boxes somewhat less evenly loaded, never break
   correctness.
 - **Overall**: **O(m · b · n²)** worst case. The redistribution deadline
-  and the group-strategy budget are what keep the extra phases from
+  and the group-strategy work budget are what keep the extra phases from
   adding anything unbounded on top of the core packing -- see the next
   section for the measured numbers this produces in practice.
 

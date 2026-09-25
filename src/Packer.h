@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <cstddef>
 
 #include "PackRequest.h"
@@ -33,12 +32,13 @@ class Packer {
   static constexpr std::size_t kMaxBoxesToBalanceWeight = 12;
 
   // Box-group strategies beyond the single-pass baseline: at most this
-  // many (one per group, largest groups first), and none started or
-  // continued once this much time has passed since Pack() began. The
-  // baseline itself always runs to completion, so this only ever bounds
-  // the extra work, never whether a result comes back.
+  // many (one per group, largest groups first), and between them at most
+  // kGroupStrategyWorkFactor times as many single-box packing attempts as
+  // the baseline made. Work rather than time, so the result is the same on
+  // every machine. The baseline itself always runs to completion, so this
+  // only ever bounds the extra work, never whether a result comes back.
   static constexpr std::size_t kMaxGroupStrategies = 4;
-  static constexpr std::chrono::milliseconds kGroupStrategyBudget{400};
+  static constexpr std::size_t kGroupStrategyWorkFactor = 3;
 };
 
 }  // namespace fitsolver
