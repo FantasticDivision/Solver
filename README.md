@@ -537,10 +537,18 @@ The engine is split into cooperating classes, each in its own file under
   as many boxes as it takes, same as ungrouped items; if a candidate box
   ends up with more than one group present, only the best-represented
   one (plus every ungrouped item, always compatible) is kept, and the
-  rest are pulled back out for another box to pick up. If more than one
-  box ends up used, `WeightRedistributor` runs afterwards to move items
-  between boxes where that reduces weight variance without changing the
-  box count.
+  rest are pulled back out for another box to pick up. When a request
+  carries two or more groups, which items share a pass matters a lot, so
+  `Packer` also tries -- for each of the (up to 4) largest groups --
+  packing the ungrouped items together with that group, then every other
+  group on its own, and keeps whichever strategy places the most items in
+  the fewest boxes (ties keep the single pass, so requests these
+  strategies don't improve pack exactly as before). Box quantity limits
+  carry across a strategy's passes. If more than one box ends up used,
+  `WeightRedistributor` runs afterwards to move items between boxes where
+  that reduces weight variance without changing the box count. A move
+  can repack a box into a different box type, so it tracks each type's
+  remaining supply and never picks one whose `MaximumBoxes` is used up.
 - **`VolumePacker`** packs one box instance -- a faithful port of
   BoxPacker's real layer-packing engine, not a simple shelf scan. It
   builds up horizontal `PackedLayer`s one at a time via `LayerPacker`:
@@ -593,6 +601,14 @@ using (`m <= n`, but in practice `m` is small).
   n) typical: its outer loop runs once per box actually used (`m` times),
   and each time re-tries every active box type (`b`) via a fresh
   `VolumePacker::Pack()` over whatever's still unplaced.
+- **Box-group strategies** (requests with `g >= 2` box groups only) repeat
+  that whole packing up to `min(g, 4)` more times, so they multiply it by a
+  constant of at most 5, never by `n`. Two more bounds keep that extra work
+  cheap: a strategy is abandoned the moment it has used as many boxes as
+  the best result so far with items still left over, and none is started
+  or continued once **400ms** has passed since `Pack()` began. The single
+  pass always runs to completion, so these can only ever improve a
+  result, never withhold one.
 - **`WeightRedistributor`** only ever runs when the solution used more
   than 1 and at most 12 boxes (`Packer::kMaxBoxesToBalanceWeight`), so its
   own box count is a *constant*, independent of `n` and `m`. It rescans
@@ -611,15 +627,16 @@ using (`m <= n`, but in practice `m` is small).
   in either this port or BoxPacker's own implementation rules that out.
   Rather than an iteration cap (which just moves the question to "how
   expensive is one iteration"), this phase is bounded by a **250ms
-  wall-clock deadline** -- safe because weight balancing is a pure
-  optimisation pass over an already-complete, already-valid packing, so
-  stopping partway through can only leave boxes somewhat less evenly
-  loaded, never break correctness.
-- **Overall**: **O(m · b · n²)** worst case. The 250ms redistribution
-  deadline is what turns that into a genuine, input-independent ceiling on
-  the whole `Packer::Pack()` call rather than just a typical-case
-  expectation -- see the next section for the measured numbers this
-  produces in practice.
+  wall-clock deadline**, checked before every repack rather than only
+  between full scans (one scan over every pair can itself run many
+  repacks) -- safe because weight balancing is a pure optimisation pass
+  over an already-complete, already-valid packing, so stopping partway
+  through can only leave boxes somewhat less evenly loaded, never break
+  correctness.
+- **Overall**: **O(m · b · n²)** worst case. The redistribution deadline
+  and the group-strategy budget are what keep the extra phases from
+  adding anything unbounded on top of the core packing -- see the next
+  section for the measured numbers this produces in practice.
 
 ### Benchmark: solve time and box count vs. dvdoug/boxpacker
 
@@ -629,30 +646,56 @@ reference this port is modelled on), to check two things: that this engine
 is faster on average, and that it never takes a box count dvdoug/boxpacker
 wouldn't also reach. See that directory's own README for how to regenerate
 and re-run it. Latest run (seed 1337, 1000 scenarios, ~60,600 item units
-total):
+total; each scenario timed best-of-3 on both sides -- see that README's
+"Timing method"):
 
-|                    | fitsolver (this repo) | dvdoug/boxpacker 4.3 |
-|--------------------|-----------------------:|----------------------:|
-| Average solve time |               28.5 ms |               95.3 ms |
-| Median solve time  |               15.0 ms |               46.0 ms |
-| Worst solve time   |              362.6 ms |             2839.3 ms |
-| Scenarios over 1s  |                0/1000 |                5/1000 |
+|                              | fitsolver (this repo) | dvdoug/boxpacker 4.3 |
+|------------------------------|-----------------------:|----------------------:|
+| Average solve time           |               28.8 ms |               85.3 ms |
+| Median solve time            |               12.4 ms |               32.2 ms |
+| Worst solve time             |              360.9 ms |             2605.4 ms |
+| Scenarios over 1s            |                0/1000 |                9/1000 |
+| Scenarios over a box limit   |                0/1000 |                0/1000 |
 
 fitsolver is faster on every measure above, and -- because of the
 redistribution deadline described in "Time complexity" -- never comes
 close to the 1-second mark even in its worst case, where dvdoug/boxpacker
 (which has no such deadline applied in this comparison) occasionally does.
+The box-limit row is there because a result that overspends a box type's
+`MaximumBoxes` can "win" on box count: before `WeightRedistributor`
+tracked remaining supply, fitsolver did exactly that on one of these
+scenarios.
 
 Box count is a more mixed result, worth reporting honestly rather than
 rounding up: fitsolver matched dvdoug/boxpacker's box count on 871/1000
 scenarios and used *fewer* boxes on 81/1000, but used *more* boxes on
-48/1000 (typically by 1-2 boxes; the worst case used 6 more). This is the
-same class of gap the Chaotic scenario in `tests/ThommeaxMinimumTests/`
-already documents (69 vs. a 67-box reference) -- greedy layer-packing
-myopia that BoxPacker's own algorithm shares, not a confirmed bug. Closing
-it fully would mean moving past a single greedy pass (e.g. backtracking
-across box-type choices, or an exact solver for small item counts) rather
-than a targeted fix, and hasn't been attempted here.
+48/1000 (typically by 1-2 boxes; the worst case used 6 more). These
+scenarios carry no box groups, so the box-group strategies don't apply;
+the gap is greedy layer-packing myopia that BoxPacker's own algorithm
+shares (on the Chaotic fixture with groups stripped, it's BoxPacker that
+comes out behind: 73 boxes to fitsolver's 70). Closing it fully would mean
+moving past a single greedy pass (e.g. backtracking across box-type
+choices, or an exact solver for small item counts) rather than a targeted
+fix, and hasn't been attempted here.
+
+### Benchmark: the Thommeax scenarios
+
+`tests/ThommeaxMinimumTests/` holds three scenarios with a reference
+result each; `thommeax_benchmark_test.cpp` asserts every unit is placed in
+no more boxes than the reference, within every box type's
+`MaximumBoxes`, and (Chaotic) without mixing box groups:
+
+| Scenario      | Units | Reference boxes | fitsolver | dvdoug/boxpacker 4.3 |
+|---------------|------:|----------------:|----------:|----------------------:|
+| Simple        |     3 |               2 |         2 | 1 |
+| SemiRealistic |   115 |               4 |         4 | 4 |
+| Chaotic       |   300 |              67 |        65 | 62 (two-pass); 48 units unplaced in one pass |
+
+dvdoug/boxpacker's Chaotic figures come from
+`benchmarks/boxpacker_comparison/php/run_thommeax.php`. Its `LinkedItem`
+means "the whole group in one box", which no box here can hold, so a
+single pass can't place either group; packed the way the reference was
+(ungrouped items with FOOD, then CORROSIVE alone) it reaches 62.
 
 ### Extending it
 

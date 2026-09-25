@@ -77,16 +77,36 @@ docker run --rm -v "$(pwd)/php":/app -v "$CA_DIR":/usr/local/share/ca-certificat
 - `run_fitsolver.cpp` -- times each scenario through `fitsolver::Packer`
   directly (no CLI/process-spawn overhead), writing `fitsolver_results.csv`.
   Built via the `fitsolver_boxpacker_bench` CMake target (`EXCLUDE_FROM_ALL`,
-  same as `fitsolver_scenario_bench`).
+  same as `fitsolver_scenario_bench` -- so `cmake --build` without
+  `--target` does **not** rebuild it; name it explicitly after changing
+  `src/`).
 - `php/run_boxpacker.php` -- the same scenarios through dvdoug/boxpacker,
   writing `boxpacker_results.csv` in the same schema. Sets a 5-second
   per-scenario `DefaultTimeoutChecker` as a safety net -- see the note in
   that file and the root README's "Time complexity" section on why the
   weight-redistribution phase both engines share isn't guaranteed to
   converge.
+- `php/run_thommeax.php` -- packs one of the repo's
+  `tests/ThommeaxMinimumTests/` fixtures with dvdoug/boxpacker, as ground
+  truth for what the reference engine itself produces on it. `linked` mode
+  maps `BoxGroup` to BoxPacker's `LinkedItem`; `passes` mode reproduces the
+  reference RESULTS.md's own method (ungrouped items with one group, each
+  other group alone); `plain` ignores groups entirely.
 - `compare.py` -- joins the two result files by scenario id and reports
   both claims, plus fitsolver's own worst-case time against the 1-second
-  budget, to `comparison_report.md`.
+  budget and whether either engine overspent a box type's `MaximumBoxes`,
+  to `comparison_report.md`.
+
+## Timing method
+
+Both harnesses time each scenario 3 times and record the fastest run
+(the third CLI argument changes the count). Each solve is deterministic,
+so the fastest run is its intrinsic cost; slower runs are the OS
+scheduling something else. Without this, background load on a
+development laptop (IDE language servers re-indexing, a local model
+server) was enough to swing single-run results by 2-10x between
+back-to-back runs of the same binary -- far more than any difference
+between the two engines.
 
 ## Units
 

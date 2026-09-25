@@ -172,26 +172,30 @@ TEST(ThommeaxBenchmark, Chaotic) {
   // `MaxWeight = contents + BoxWeight` also left Simple and
   // SemiRealistic matching the reference exactly.
   //
-  // The remaining 69 vs 67 is not a confirmed engine bug. Every decision
-  // point has since been diffed against boxpacker 4.3 (the version that
-  // produced this table) -- item/box/packed-box sorters, permutation
-  // generation, the stability filter, layer packing, weight capacity and
-  // the Packer loop all match. The residual gap is greedy myopia that
-  // boxpacker shares: a heavy filler (e.g. a 2.9kg SHOT) claims a side
-  // gap in a Large Cube and poisons its 5kg contents budget for further
-  // flat items that would have stacked there. RESULTS.md's own header
-  // says the reference was produced in two passes ("FOOD packs
-  // separately"); reproducing that split naively does reach 67, but only
-  // by spending a third Standard Carton against a `max 2` limit, and a
-  // quota-correct two-pass run comes out at 70 -- worse than this one.
+  // 69 -> 65, two changes. RESULTS.md's own header says the reference was
+  // produced in two passes (ungrouped items with one group, FOOD on its
+  // own). Reproducing that split used to "reach 67" only by spending
+  // extra Standard Cartons against the `max 2` limit -- which was a real
+  // bug, not a property of the split: WeightRedistributor repacked boxes
+  // into whichever type fitted with no regard for supply left, so any
+  // result of 12 boxes or fewer (like FOOD's own pass) could overspend a
+  // quota. It now tracks remaining supply the way BoxPacker's
+  // doVolumeRepack() does. With that fixed, Packer tries the per-group
+  // split itself whenever a request has two or more groups, alongside the
+  // single pass, and keeps the better result: ungrouped + FOOD first,
+  // then CORROSIVE alone, packs everything quota-correctly in 65.
+  //
+  // For comparison, dvdoug/boxpacker 4.3 itself on this exact input (see
+  // benchmarks/boxpacker_comparison/php/run_thommeax.php): its LinkedItem
+  // means "whole group in one box", so a single pass leaves 48 units
+  // unplaced; the same two-pass split packs everything in 62.
   const fitsolver::PackResponse response = PackScenario("Chaotic");
   ExpectEveryScenarioUnitPlaced("Chaotic", response, 300);
 
   EXPECT_TRUE(response.unplaced_items.Empty())
       << response.unplaced_items.Count() << " unit(s) left unplaced";
-  EXPECT_LE(response.boxes.Count(), 70u)
-      << "used " << response.boxes.Count() << " boxes; reference used 67 "
-      << "(box-count parity is a known, separate gap -- see comment above)";
+  EXPECT_LE(response.boxes.Count(), 67u)
+      << "used " << response.boxes.Count() << " boxes; reference used 67";
 
   // Box quantity limits are what make the box count meaningful -- a run
   // that quietly overspends them can "beat" the reference on paper.
@@ -199,4 +203,10 @@ TEST(ThommeaxBenchmark, Chaotic) {
   for (const auto& box : response.boxes) ++used[box.GetBox()->GetReference()];
   EXPECT_LE(used["Golf Bag Box"], 12) << "Golf Bag Box is limited to 12";
   EXPECT_LE(used["Standard Carton"], 2) << "Standard Carton is limited to 2";
+
+  // Likewise segregation: FOOD and CORROSIVE never share a box.
+  for (const auto& box : response.boxes) {
+    EXPECT_LE(box.GetItems().GetLinkedGroupCounts().size(), 1u)
+        << box.GetBox()->GetReference() << " mixes box groups";
+  }
 }

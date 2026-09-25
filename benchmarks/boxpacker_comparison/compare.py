@@ -97,6 +97,19 @@ def main() -> None:
             lines.append(f"- id={i}: {ms:.1f} ms")
         lines.append("")
 
+    lines.append("## Box quantity limits (MaximumBoxes) respected\n")
+    our_quota = [(i, int(ours[i].get("quota_violations", 0) or 0)) for i in ids]
+    their_quota = [(i, int(theirs[i].get("quota_violations", 0) or 0)) for i in ids]
+    our_bad = [(i, v) for i, v in our_quota if v > 0]
+    their_bad = [(i, v) for i, v in their_quota if v > 0]
+    lines.append(f"- fitsolver scenarios over a box limit: {len(our_bad)} / {len(ids)}")
+    lines.append(f"- boxpacker scenarios over a box limit: {len(their_bad)} / {len(ids)}")
+    lines.append(f"- **Result: {'PASS' if not our_bad else 'FAIL'}** "
+                 "(a box-count win that overspends a quota isn't a real win)\n")
+    if our_bad:
+        lines.append("fitsolver offenders (id, boxes over limit): "
+                     + ", ".join(f"{i}:{v}" for i, v in our_bad[:20]) + "\n")
+
     if unplaced_mismatch:
         lines.append(f"## Note: {len(unplaced_mismatch)} scenario(s) placed a different number of items\n")
         lines.append("(id, fitsolver unplaced, boxpacker unplaced) -- expected occasionally, since the two")

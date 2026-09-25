@@ -58,3 +58,48 @@ TEST(WeightRedistribution, TerminatesQuicklyOnACyclingInput) {
   EXPECT_TRUE(response.success);
   EXPECT_TRUE(response.unplaced_items.Empty());
 }
+
+// Redistribution repacks a box into the smallest type that fits, which can
+// be a different type from the one it replaces. It used to ignore box
+// quantity limits while doing so: Chaotic's FOOD items, packed on their
+// own, came back in 4 Standard Cartons against a limit of 0 (smaller than
+// the Large Cubes they were first packed into, and with more weight
+// capacity). Only ungrouped items trip it -- redistribution never moves a
+// box-group member -- which is how it hid behind the grouped Chaotic
+// fixture.
+TEST(WeightRedistribution, RespectsBoxQuantityLimits) {
+  nlohmann::json request = {{"items", nlohmann::json::array()},
+                            {"boxes",
+                             {{{"Reference", "Large Cube"},
+                               {"Width", 550},
+                               {"Length", 550},
+                               {"Depth", 550},
+                               {"MaxWeight", 6.5},
+                               {"BoxWeight", 1.5}},
+                              {{"Reference", "Standard Carton"},
+                               {"Width", 400},
+                               {"Length", 300},
+                               {"Depth", 250},
+                               {"MaxWeight", 20.5},
+                               {"BoxWeight", 0.5},
+                               {"MaximumBoxes", 0}}}}};
+  for (int i = 0; i < 16; ++i) {
+    request["items"].push_back({{"ItemCode", "TIN::" + std::to_string(i)},
+                                {"Width", 100}, {"Length", 100}, {"Depth", 110}, {"Weight", 0.85}});
+  }
+  for (int i = 0; i < 18; ++i) {
+    request["items"].push_back({{"ItemCode", "JAR::" + std::to_string(i)},
+                                {"Width", 60}, {"Length", 60}, {"Depth", 130}, {"Weight", 0.2}});
+  }
+
+  const fitsolver::PackRequest parsed = fitsolver::PackRequest::FromJson(request);
+  const fitsolver::PackResponse response =
+      fitsolver::Packer().Pack(parsed.GetItems(), parsed.GetBoxes());
+
+  ASSERT_TRUE(response.success);
+  ASSERT_GT(response.boxes.Count(), 1u) << "needs 2+ boxes for redistribution to run at all";
+  for (const auto& box : response.boxes) {
+    EXPECT_NE(box.GetBox()->GetReference(), "Standard Carton")
+        << "Standard Carton has MaximumBoxes 0 and must never be used";
+  }
+}

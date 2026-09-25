@@ -1,14 +1,17 @@
 // Runs every scenario in scenarios.json through fitsolver::Packer, timing
-// each solve individually, and writes fitsolver_results.csv:
-//   id,total_units,placed,unplaced,boxes_used,solve_ms
+// each solve individually (best of `repeat` runs), and writes
+// fitsolver_results.csv:
+//   id,total_units,placed,unplaced,boxes_used,solve_ms,quota_violations
 //
-// Usage: fitsolver_boxpacker_bench <scenarios.json> <results.csv>
+// Usage: fitsolver_boxpacker_bench <scenarios.json> <results.csv> [repeat=3]
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -50,16 +53,17 @@ nlohmann::json ExpandItems(const nlohmann::json& item_types) {
 
 int main(int argc, char** argv) {
   if (argc < 3) {
-    std::cerr << "usage: " << argv[0] << " <scenarios.json> <results.csv>\n";
+    std::cerr << "usage: " << argv[0] << " <scenarios.json> <results.csv> [repeat=3]\n";
     return 2;
   }
   const std::string scenarios_path = argv[1];
   const std::string results_path = argv[2];
+  const int repeat = argc > 3 ? std::max(1, std::atoi(argv[3])) : 3;
 
   const nlohmann::json scenarios = nlohmann::json::parse(ReadFile(scenarios_path));
 
   std::ofstream out(results_path);
-  out << "id,total_units,placed,unplaced,boxes_used,solve_ms\n";
+  out << "id,total_units,placed,unplaced,boxes_used,solve_ms,quota_violations\n";
   out << std::fixed << std::setprecision(4);
 
   std::vector<double> solve_times_ms;
@@ -77,18 +81,36 @@ int main(int argc, char** argv) {
     const fitsolver::PackRequest request =
         fitsolver::PackRequest::FromJsonString(request_json.dump());
 
-    const auto start = Clock::now();
-    const fitsolver::PackResponse response =
-        fitsolver::Packer().Pack(request.GetItems(), request.GetBoxes());
-    const double ms = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+    // Best of `repeat` runs: the solve itself is deterministic, so the
+    // fastest run is its intrinsic cost and anything slower is the OS
+    // scheduling something else. run_boxpacker.php does the same.
+    fitsolver::PackResponse response;
+    double ms = 0.0;
+    for (int run = 0; run < repeat; ++run) {
+      const auto start = Clock::now();
+      response = fitsolver::Packer().Pack(request.GetItems(), request.GetBoxes());
+      const double run_ms = std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+      ms = run == 0 ? run_ms : std::min(ms, run_ms);
+    }
     solve_times_ms.push_back(ms);
     if (ms > 1000.0) ++over_budget_count;
 
     const int placed = response.GetTotalPlacedCount();
     const int unplaced = static_cast<int>(response.unplaced_items.Count());
 
+    // Boxes used beyond a box type's MaximumBoxes -- a result that
+    // overspends its quota can "win" on box count, so it must be visible.
+    std::map<std::string, int> used;
+    for (const auto& box : response.boxes) ++used[box.GetBox()->GetReference()];
+    int quota_violations = 0;
+    for (const auto& box : scenario.at("boxes")) {
+      if (!box.contains("MaximumBoxes")) continue;
+      const int over = used[box.at("Reference").get<std::string>()] - box.at("MaximumBoxes").get<int>();
+      if (over > 0) quota_violations += over;
+    }
+
     out << id << ',' << scenario.at("total_units").get<int>() << ',' << placed << ',' << unplaced
-        << ',' << response.boxes.Count() << ',' << ms << '\n';
+        << ',' << response.boxes.Count() << ',' << ms << ',' << quota_violations << '\n';
     out.flush();
 
     // Progress to stderr, not stdout, so results.csv's consumer (compare.py)

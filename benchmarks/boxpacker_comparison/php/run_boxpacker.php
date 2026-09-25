@@ -96,21 +96,24 @@ function grams(float $kg): int
 }
 
 if ($argc < 3) {
-    fwrite(STDERR, "usage: php {$argv[0]} <scenarios.json> <results.csv>\n");
+    fwrite(STDERR, "usage: php {$argv[0]} <scenarios.json> <results.csv> [repeat=3]\n");
     exit(2);
 }
 [, $scenariosPath, $resultsPath] = $argv;
+$repeat = max(1, (int) ($argv[3] ?? 3));
 
 $scenarios = json_decode(file_get_contents($scenariosPath), true, flags: JSON_THROW_ON_ERROR);
 
 $out = fopen($resultsPath, 'w');
-fwrite($out, "id,total_units,placed,unplaced,boxes_used,solve_ms\n");
+fwrite($out, "id,total_units,placed,unplaced,boxes_used,solve_ms,quota_violations\n");
 
 $solveTimesMs = [];
 $overBudget = 0;
 $errors = 0;
 
-foreach ($scenarios as $scenario) {
+/** A fresh Packer for one scenario -- pack() consumes its item list, so each timed run needs its own. */
+function buildPacker(array $scenario): Packer
+{
     $packer = new Packer();
     $packer->throwOnUnpackableItem(false); // match FitSolver: report unplaced, don't abort
     $packer->setTimeoutChecker(new DefaultTimeoutChecker(TIMEOUT_SECONDS));
@@ -132,7 +135,7 @@ foreach ($scenarios as $scenario) {
             continue; // FitSolver's Packer::Pack also skips inactive boxes entirely
         }
         $quantity = array_key_exists('MaximumBoxes', $boxType) ? (int) $boxType['MaximumBoxes'] : PHP_INT_MAX;
-        $box = new ScenarioBox(
+        $packer->addBox(new ScenarioBox(
             $boxType['Reference'],
             (int) $boxType['Width'],
             (int) $boxType['Length'],
@@ -140,34 +143,58 @@ foreach ($scenarios as $scenario) {
             grams((float) ($boxType['BoxWeight'] ?? 0.0)),
             grams((float) $boxType['MaxWeight']),
             $quantity,
-        );
-        $packer->addBox($box);
-        if ($quantity !== PHP_INT_MAX) {
-            $packer->setBoxQuantity($box, $quantity);
+        ));
+    }
+    return $packer;
+}
+
+foreach ($scenarios as $scenario) {
+    // Best of $repeat runs, same as run_fitsolver.cpp: the solve is
+    // deterministic, so the fastest run is its intrinsic cost.
+    $ms = INF;
+    $quotaViolations = 0;
+    for ($run = 0; $run < $repeat; ++$run) {
+        $packer = buildPacker($scenario);
+        $start = hrtime(true);
+        try {
+            $packedBoxes = $packer->pack();
+            $runMs = (hrtime(true) - $start) / 1_000_000.0;
+            $boxesUsed = $packedBoxes->count();
+            $unplaced = $packer->getUnpackedItems()->count();
+        } catch (TimeoutException $e) {
+            // The pairwise weight redistribution can cycle without
+            // converging (see the TIMEOUT_SECONDS comment above) -- record
+            // the timeout itself as this scenario's time.
+            $runMs = (hrtime(true) - $start) / 1_000_000.0;
+            fwrite(STDERR, "scenario {$scenario['id']} timed out after {$e->getSpentTime()}s\n");
+            $packedBoxes = null;
+            $boxesUsed = -1;
+            $unplaced = -1;
+        } catch (\Throwable $e) {
+            // Defensive only -- throwOnUnpackableItem(false) should prevent
+            // this. Record as a failed scenario rather than aborting the run.
+            $runMs = (hrtime(true) - $start) / 1_000_000.0;
+            fwrite(STDERR, "scenario {$scenario['id']} failed: {$e->getMessage()}\n");
+            $packedBoxes = null;
+            $boxesUsed = -1;
+            $unplaced = -1;
+            ++$errors;
         }
+        $ms = min($ms, $runMs);
     }
 
-    $start = hrtime(true);
-    try {
-        $packedBoxes = $packer->pack();
-        $boxesUsed = $packedBoxes->count();
-        $unplaced = $packer->getUnpackedItems()->count();
-    } catch (TimeoutException $e) {
-        // The pairwise weight redistribution can cycle without converging
-        // (see the TIMEOUT_SECONDS comment above) -- record the timeout
-        // itself as this scenario's time rather than aborting the run.
-        fwrite(STDERR, "scenario {$scenario['id']} timed out after {$e->getSpentTime()}s\n");
-        $boxesUsed = -1;
-        $unplaced = -1;
-    } catch (\Throwable $e) {
-        // Defensive only -- throwOnUnpackableItem(false) should prevent this.
-        // Record as a failed scenario rather than aborting the whole run.
-        fwrite(STDERR, "scenario {$scenario['id']} failed: {$e->getMessage()}\n");
-        $boxesUsed = -1;
-        $unplaced = -1;
-        ++$errors;
+    if ($packedBoxes !== null) {
+        $used = [];
+        foreach ($packedBoxes as $packedBox) {
+            $ref = $packedBox->box->getReference();
+            $used[$ref] = ($used[$ref] ?? 0) + 1;
+        }
+        foreach ($scenario['boxes'] as $boxType) {
+            if (array_key_exists('MaximumBoxes', $boxType)) {
+                $quotaViolations += max(0, ($used[$boxType['Reference']] ?? 0) - (int) $boxType['MaximumBoxes']);
+            }
+        }
     }
-    $ms = (hrtime(true) - $start) / 1_000_000.0;
 
     $solveTimesMs[] = $ms;
     if ($ms > 1000.0) {
@@ -176,13 +203,14 @@ foreach ($scenarios as $scenario) {
 
     $placed = $scenario['total_units'] - ($unplaced < 0 ? 0 : $unplaced);
     fwrite($out, sprintf(
-        "%d,%d,%d,%d,%d,%.4f\n",
+        "%d,%d,%d,%d,%d,%.4f,%d\n",
         $scenario['id'],
         $scenario['total_units'],
         $placed,
         $unplaced,
         $boxesUsed,
         $ms,
+        $quotaViolations,
     ));
 }
 fclose($out);

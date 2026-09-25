@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <limits>
 
+#include "LimitedSupplyBox.h"
 #include "LinkedItem.h"
 #include "VolumePacker.h"
 
@@ -13,6 +15,8 @@ double Variance(double a, double b) {
   const double mean = (a + b) / 2.0;
   return (a - mean) * (a - mean);
 }
+
+constexpr long long kUnlimitedSupply = std::numeric_limits<long long>::max() / 2;
 
 // Each accepted swap strictly reduces variance *for the pair it was chosen
 // for* (Variance() above is relative to that pair's own mean, not the
@@ -41,19 +45,30 @@ WeightRedistributor::WeightRedistributor(BoxList boxes) : boxes_(std::move(boxes
 PackedBoxList WeightRedistributor::Redistribute(const PackedBoxList& original) const {
   const double target_weight = original.GetMeanItemWeight();
 
+  Supply supply;
+  for (const auto& box : boxes_) {
+    const auto* limited = dynamic_cast<const LimitedSupplyBox*>(box.get());
+    supply[box.get()] = limited != nullptr ? limited->GetQuantityAvailable() : kUnlimitedSupply;
+  }
+  for (const auto& packed : original) --supply[packed.GetBox().get()];
+
   std::vector<PackedBox> boxes(original.begin(), original.end());
   std::sort(boxes.begin(), boxes.end(),
             [](const PackedBox& a, const PackedBox& b) { return a.GetWeight() > b.GetWeight(); });
 
+  // Checked before every repack, not just between full scans: one scan
+  // over every box pair can itself run many repacks, so a scan-level check
+  // alone could overshoot the deadline by a whole scan.
   const auto deadline = std::chrono::steady_clock::now() + kRedistributionDeadline;
+  const auto expired = [deadline] { return std::chrono::steady_clock::now() >= deadline; };
 
   bool changed = true;
-  while (changed && std::chrono::steady_clock::now() < deadline) {
+  while (changed && !expired()) {
     changed = false;
-    for (std::size_t i = 0; i < boxes.size() && !changed; ++i) {
-      for (std::size_t j = i + 1; j < boxes.size() && !changed; ++j) {
+    for (std::size_t i = 0; i < boxes.size() && !changed && !expired(); ++i) {
+      for (std::size_t j = i + 1; j < boxes.size() && !changed && !expired(); ++j) {
         if (boxes[i].GetWeight() == boxes[j].GetWeight()) continue;
-        changed = TryEqualiseWeight(boxes, i, j, target_weight);
+        changed = TryEqualiseWeight(boxes, i, j, target_weight, supply, expired);
       }
     }
   }
@@ -64,9 +79,12 @@ PackedBoxList WeightRedistributor::Redistribute(const PackedBoxList& original) c
 }
 
 bool WeightRedistributor::TryEqualiseWeight(std::vector<PackedBox>& boxes, std::size_t i,
-                                             std::size_t j, double target_weight) const {
+                                             std::size_t j, double target_weight, Supply& supply,
+                                             const std::function<bool()>& expired) const {
   const std::size_t heavy_idx = boxes[i].GetWeight() > boxes[j].GetWeight() ? i : j;
   const std::size_t light_idx = heavy_idx == i ? j : i;
+  const Box* heavy_type = boxes[heavy_idx].GetBox().get();
+  const Box* light_type = boxes[light_idx].GetBox().get();
 
   std::vector<ItemPtr> heavy_items;
   for (const auto& packed_item : boxes[heavy_idx].GetItems()) heavy_items.push_back(packed_item.GetItem());
@@ -76,7 +94,7 @@ bool WeightRedistributor::TryEqualiseWeight(std::vector<PackedBox>& boxes, std::
   double heavy_weight = boxes[heavy_idx].GetItemWeight();
   double light_weight = boxes[light_idx].GetItemWeight();
 
-  for (std::size_t k = 0; k < heavy_items.size(); ++k) {
+  for (std::size_t k = 0; k < heavy_items.size() && !expired(); ++k) {
     const ItemPtr& candidate = heavy_items[k];
 
     // Can't move individual linked-group members -- group integrity
@@ -94,22 +112,34 @@ bool WeightRedistributor::TryEqualiseWeight(std::vector<PackedBox>& boxes, std::
 
     std::vector<ItemPtr> new_light_items = light_items;
     new_light_items.push_back(candidate);
-    auto new_light_box = RepackSingleBox(new_light_items);
+    auto new_light_box = RepackSingleBox(new_light_items, light_type, supply);
     if (!new_light_box.has_value()) continue;  // no longer fits in a single box
+
+    // The light box is handed back and its replacement taken before the
+    // heavy side is repacked, so both repacks can't claim the same last
+    // unit of a limited box type.
+    Supply after = supply;
+    ++after[light_type];
+    --after[new_light_box->GetBox().get()];
 
     std::vector<ItemPtr> new_heavy_items = heavy_items;
     new_heavy_items.erase(new_heavy_items.begin() + static_cast<std::ptrdiff_t>(k));
 
     if (new_heavy_items.empty()) {
       // Moving this item emptied the heavy box entirely -- eliminate it.
+      ++after[heavy_type];
+      supply = std::move(after);
       boxes[light_idx] = std::move(*new_light_box);
       boxes.erase(boxes.begin() + static_cast<std::ptrdiff_t>(heavy_idx));
       return true;
     }
 
-    auto new_heavy_box = RepackSingleBox(new_heavy_items);
+    auto new_heavy_box = RepackSingleBox(new_heavy_items, heavy_type, after);
     if (!new_heavy_box.has_value()) continue;  // n-1 items should still fit, but be safe
 
+    ++after[heavy_type];
+    --after[new_heavy_box->GetBox().get()];
+    supply = std::move(after);
     boxes[light_idx] = std::move(*new_light_box);
     boxes[heavy_idx] = std::move(*new_heavy_box);
     return true;
@@ -118,15 +148,10 @@ bool WeightRedistributor::TryEqualiseWeight(std::vector<PackedBox>& boxes, std::
   return false;
 }
 
-std::optional<PackedBox> WeightRedistributor::RepackSingleBox(const std::vector<ItemPtr>& items) const {
+std::optional<PackedBox> WeightRedistributor::RepackSingleBox(const std::vector<ItemPtr>& items,
+                                                               const Box* replacing,
+                                                               const Supply& supply) const {
   if (items.empty()) return std::nullopt;
-
-  std::vector<const Item*> key;
-  key.reserve(items.size());
-  for (const auto& item : items) key.push_back(item.get());
-  if (const auto cached = repack_cache_.find(key); cached != repack_cache_.end()) {
-    return cached->second;
-  }
 
   double total_volume = 0.0;
   double total_weight = 0.0;
@@ -135,12 +160,12 @@ std::optional<PackedBox> WeightRedistributor::RepackSingleBox(const std::vector<
     total_weight += item->GetWeight();
   }
 
-  ItemList item_list;
-  for (const auto& item : items) item_list.Insert(item);
-
-  std::optional<PackedBox> found;
   for (const auto& box : boxes_) {
     if (!box->GetActive()) continue;
+
+    const auto left = supply.find(box.get());
+    const long long spare = (left == supply.end() ? 0 : left->second) + (box.get() == replacing ? 1 : 0);
+    if (spare <= 0) continue;
 
     // All `items` must be placed for a box to count, and placed items never
     // overlap and never exceed the weight budget -- so a box whose volume or
@@ -150,16 +175,28 @@ std::optional<PackedBox> WeightRedistributor::RepackSingleBox(const std::vector<
     const double weight_capacity = box->GetWeightCapacityForItems();
     if (weight_capacity >= 0.0 && total_weight > weight_capacity) continue;
 
-    VolumePacker packer(box);
-    PackedBox result = packer.Pack(item_list);
-    if (result.GetItems().Count() == items.size()) {
-      found = std::move(result);
-      break;
-    }
+    if (auto fitted = FitAll(items, box)) return fitted;
   }
+  return std::nullopt;
+}
 
-  repack_cache_.emplace(std::move(key), found);
-  return found;
+std::optional<PackedBox> WeightRedistributor::FitAll(const std::vector<ItemPtr>& items,
+                                                      const BoxPtr& box) const {
+  std::vector<const Item*> key_items;
+  key_items.reserve(items.size());
+  for (const auto& item : items) key_items.push_back(item.get());
+  auto key = std::make_pair(std::move(key_items), box.get());
+  if (const auto cached = fit_cache_.find(key); cached != fit_cache_.end()) return cached->second;
+
+  ItemList item_list;
+  for (const auto& item : items) item_list.Insert(item);
+
+  std::optional<PackedBox> fitted;
+  PackedBox result = VolumePacker(box).Pack(item_list);
+  if (result.GetItems().Count() == items.size()) fitted = std::move(result);
+
+  fit_cache_.emplace(std::move(key), fitted);
+  return fitted;
 }
 
 }  // namespace fitsolver
