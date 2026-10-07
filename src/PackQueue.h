@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <deque>
 #include <vector>
 
 #include "Item.h"
@@ -14,39 +13,34 @@ namespace fitsolver {
 // FRONT, in the order given, jumping ahead of whatever's already queued
 // rather than being re-sorted back to their original position. Mirrors
 // BoxPacker's ItemList::extract()/top()/topN()/requeue().
+//
+// Stored back-to-front in one contiguous vector so the front (the next item
+// to pack) is the cheap end: Extract() is a pop_back, and the sorter can read
+// "what's still to come" in place (Count/At/Top) instead of every placement
+// copying the whole remaining queue.
 class PackQueue {
  public:
-  explicit PackQueue(std::vector<ItemPtr> items) : items_(items.begin(), items.end()) {}
+  explicit PackQueue(const std::vector<ItemPtr>& items) : items_(items.rbegin(), items.rend()) {}
 
   bool Empty() const { return items_.empty(); }
   std::size_t Count() const { return items_.size(); }
-  const ItemPtr& Top() const { return items_.front(); }
+  const ItemPtr& Top() const { return items_.back(); }
+
+  // The i-th item from the front (At(0) == Top()).
+  const ItemPtr& At(std::size_t i) const { return items_[items_.size() - 1 - i]; }
 
   ItemPtr Extract() {
-    ItemPtr item = std::move(items_.front());
-    items_.pop_front();
+    ItemPtr item = std::move(items_.back());
+    items_.pop_back();
     return item;
   }
 
-  std::vector<ItemPtr> TopN(std::size_t n) const {
-    std::vector<ItemPtr> result;
-    const std::size_t count = std::min(n, items_.size());
-    result.reserve(count);
-    for (std::size_t i = 0; i < count; ++i) result.push_back(items_[i]);
-    return result;
-  }
-
   void Requeue(const std::vector<ItemPtr>& skipped) {
-    items_.insert(items_.begin(), skipped.begin(), skipped.end());
+    items_.insert(items_.end(), skipped.rbegin(), skipped.rend());
   }
-
-  // Everything currently left in the queue, in priority order. Used to
-  // pass "what's still to come" into look-ahead scoring without exposing
-  // the deque directly.
-  std::vector<ItemPtr> Snapshot() const { return std::vector<ItemPtr>(items_.begin(), items_.end()); }
 
  private:
-  std::deque<ItemPtr> items_;
+  std::vector<ItemPtr> items_;
 };
 
 }  // namespace fitsolver

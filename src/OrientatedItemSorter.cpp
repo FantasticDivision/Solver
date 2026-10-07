@@ -1,6 +1,9 @@
 #include "OrientatedItemSorter.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 
@@ -27,12 +30,41 @@ long long IntDiv(double a, double b) {
   return b > 0.0 ? static_cast<long long>(a / b) : 0;
 }
 
+// How many upcoming items the look-ahead sub-packs.
+constexpr std::size_t kLookAheadItems = 7;
+
+// Six decimal places, the same resolution the look-ahead cache key has always
+// had (it used std::to_string(double)), so floating-point noise in a
+// remaining-space subtraction doesn't defeat the cache.
+long long Quantise(double value) { return std::llround(value * 1e6); }
+
+// Six geometry values, the item count, then width/length/depth/weight/rotation
+// for each look-ahead item.
+struct LookAheadKey {
+  std::array<long long, 7 + 5 * kLookAheadItems> values{};
+  bool operator==(const LookAheadKey& other) const { return values == other.values; }
+};
+
+struct LookAheadKeyHash {
+  std::size_t operator()(const LookAheadKey& key) const {
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (const long long value : key.values) {
+      hash ^= static_cast<std::uint64_t>(value);
+      hash *= 1099511628211ULL;
+    }
+    return static_cast<std::size_t>(hash);
+  }
+};
+
+// A long-lived process would otherwise grow the cache without bound.
+constexpr std::size_t kMaxLookAheadCacheEntries = 1u << 18;
+
 }  // namespace
 
 OrientatedItemSorter::OrientatedItemSorter(const OrientatedItemFactory& factory,
                                             bool single_pass_mode, double width_left,
                                             double length_left, double depth_left,
-                                            const std::vector<ItemPtr>& next_items,
+                                            const PackQueue& next_items,
                                             double row_length)
     : factory_(factory), single_pass_mode_(single_pass_mode), width_left_(width_left),
       length_left_(length_left), depth_left_(depth_left), next_items_(next_items),
@@ -92,7 +124,7 @@ int OrientatedItemSorter::SameSizeItemsDecider(const OrientatedItem& a,
                                                 const OrientatedItem& b) const {
   if (!AllRemainingSameSize(a)) return 0;
 
-  const long long remaining = static_cast<long long>(next_items_.size()) + 1;
+  const long long remaining = static_cast<long long>(next_items_.Count()) + 1;
   if (remaining < kMinSameSizeItems) return 0;
 
   const long long fit_a = HowManyFitWithOrientation(a.GetWidth(), a.GetLength(), a.GetDepth());
@@ -115,13 +147,8 @@ long long OrientatedItemSorter::HowManyFitWithOrientation(double width, double l
 bool OrientatedItemSorter::AllRemainingSameSize(const OrientatedItem& oriented) const {
   if (all_remaining_same_size_cache_.has_value()) return *all_remaining_same_size_cache_;
 
-  if (next_items_.empty()) {
-    all_remaining_same_size_cache_ = true;
-    return true;
-  }
-
-  for (const auto& next : next_items_) {
-    if (!oriented.IsSameDimensions(next)) {
+  for (std::size_t i = 0; i < next_items_.Count(); ++i) {
+    if (!oriented.IsSameDimensions(next_items_.At(i))) {
       all_remaining_same_size_cache_ = false;
       return false;
     }
@@ -139,11 +166,11 @@ bool OrientatedItemSorter::IsSlabLike(const ItemPtr& item) {
 
 int OrientatedItemSorter::LookAheadDecider(const OrientatedItem& a, const OrientatedItem& b,
                                             double a_width_left, double b_width_left) const {
-  if (next_items_.empty()) return 0;
+  if (next_items_.Empty()) return 0;
 
-  const auto fit_a = factory_.GetPossibleOrientations(next_items_.front(), &a, a_width_left,
+  const auto fit_a = factory_.GetPossibleOrientations(next_items_.Top(), &a, a_width_left,
                                                         length_left_, depth_left_);
-  const auto fit_b = factory_.GetPossibleOrientations(next_items_.front(), &b, b_width_left,
+  const auto fit_b = factory_.GetPossibleOrientations(next_items_.Top(), &b, b_width_left,
                                                         length_left_, depth_left_);
   if (!fit_a.empty() && fit_b.empty()) return -1;
   if (!fit_b.empty() && fit_a.empty()) return 1;
@@ -163,26 +190,34 @@ int OrientatedItemSorter::CalculateAdditionalItemsPacked(const OrientatedItem& p
   if (single_pass_mode_) return 0;
 
   const double current_row_length = std::max(prev_item.GetLength(), row_length_);
-  std::vector<ItemPtr> items_to_pack;
-  for (std::size_t i = 0; i < next_items_.size() && i < 7; ++i) {
-    items_to_pack.push_back(next_items_[i]);
+  const std::size_t look_ahead_count = std::min<std::size_t>(next_items_.Count(), kLookAheadItems);
+
+  LookAheadKey key;
+  key.values[0] = Quantise(width_left_);
+  key.values[1] = Quantise(length_left_);
+  key.values[2] = Quantise(prev_item.GetWidth());
+  key.values[3] = Quantise(prev_item.GetLength());
+  key.values[4] = Quantise(current_row_length);
+  key.values[5] = Quantise(depth_left_);
+  key.values[6] = static_cast<long long>(look_ahead_count);
+  for (std::size_t i = 0; i < look_ahead_count; ++i) {
+    const ItemPtr& item = next_items_.At(i);
+    const std::size_t base = 7 + 5 * i;
+    key.values[base] = Quantise(item->GetWidth());
+    key.values[base + 1] = Quantise(item->GetLength());
+    key.values[base + 2] = Quantise(item->GetDepth());
+    key.values[base + 3] = Quantise(item->GetWeight());
+    key.values[base + 4] = static_cast<long long>(item->GetAllowedRotation());
   }
 
-  std::string cache_key = std::to_string(width_left_) + "|" + std::to_string(length_left_) + "|" +
-                           std::to_string(prev_item.GetWidth()) + "|" +
-                           std::to_string(prev_item.GetLength()) + "|" +
-                           std::to_string(current_row_length) + "|" + std::to_string(depth_left_);
-  for (const auto& item : items_to_pack) {
-    cache_key += "|" + std::to_string(item->GetWidth()) + "|" + std::to_string(item->GetLength()) +
-                 "|" + std::to_string(item->GetDepth()) + "|" + std::to_string(item->GetWeight()) +
-                 "|" + std::to_string(static_cast<int>(item->GetAllowedRotation()));
-  }
-
-  static std::unordered_map<std::string, int> lookahead_cache;
-  if (auto it = lookahead_cache.find(cache_key); it != lookahead_cache.end()) return it->second;
+  // thread_local: solves can run concurrently (the portal serves requests on a
+  // thread pool), and a shared cache would be a data race.
+  thread_local std::unordered_map<LookAheadKey, int, LookAheadKeyHash> lookahead_cache;
+  if (const auto it = lookahead_cache.find(key); it != lookahead_cache.end()) return it->second;
+  if (lookahead_cache.size() >= kMaxLookAheadCacheEntries) lookahead_cache.clear();
 
   ItemList pool;
-  for (const auto& item : items_to_pack) pool.Insert(item);
+  for (std::size_t i = 0; i < look_ahead_count; ++i) pool.Insert(next_items_.At(i));
 
   auto remaining_row_box = std::make_shared<WorkingVolume>(
       width_left_ - prev_item.GetWidth(), current_row_length, depth_left_);
@@ -198,8 +233,8 @@ int OrientatedItemSorter::CalculateAdditionalItemsPacked(const OrientatedItem& p
   const PackedBox next_rows_packed = next_rows_packer.Pack(pool);
   pool.RemovePacked(next_rows_packed.GetItems());
 
-  const int packed_count = static_cast<int>(items_to_pack.size() - pool.Count());
-  lookahead_cache[cache_key] = packed_count;
+  const int packed_count = static_cast<int>(look_ahead_count - pool.Count());
+  lookahead_cache.emplace(key, packed_count);
   return packed_count;
 }
 

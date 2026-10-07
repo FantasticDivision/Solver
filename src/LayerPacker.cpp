@@ -57,7 +57,7 @@ PackedLayer LayerPacker::PackLayer(PackQueue& queue, PackedItemList& packed_item
       pending_first_item = nullptr;
     } else {
       orientated_item = orientated_item_factory_.GetBestOrientation(
-          item_to_pack, prev_item.has_value() ? &*prev_item : nullptr, queue.Snapshot(),
+          item_to_pack, prev_item.has_value() ? &*prev_item : nullptr, queue,
           width_for_layer - x, length_for_layer - y, depth_for_layer, row_length,
           consider_stability);
     }
