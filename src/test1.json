@@ -1,0 +1,40 @@
+{
+  "boxes": [
+    {
+      "Reference": "SmallBox",
+      "Width": 10.0,
+      "Length": 10.0,
+      "Depth": 10.0,
+      "EmptyWeight": 0.5,
+      "MaxWeight": 20.0,
+      "Active": true
+    },
+    {
+      "Reference": "LargeBox",
+      "Width": 20.0,
+      "Length": 20.0,
+      "Depth": 20.0,
+      "EmptyWeight": 1.0,
+      "MaxWeight": 50.0,
+      "Active": true
+    }
+  ],
+  "items": [
+    {
+      "ItemCode": "ItemA",
+      "Width": 5.0,
+      "Length": 5.0,
+      "Depth": 5.0,
+      "Weight": 1.0,
+      "AllowedRotation": "all"
+    },
+    {
+      "ItemCode": "ItemB",
+      "Width": 6.0,
+      "Length": 6.0,
+      "Depth": 6.0,
+      "Weight": 2.0,
+      "AllowedRotation": "all"
+    }
+  ]
+}
