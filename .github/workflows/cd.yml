@@ -51,6 +51,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # A container reference must be all-lowercase; github.repository
+      # ("FantasticDivision/Solver") is not, which makes an explicit
+      # `docker push` reject the tag. Lowercase it here rather than rely
+      # on any action's implicit handling.
+      - name: Resolve lowercase image name
+        run: echo "IMAGE=${REGISTRY}/${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+
       # Generates sensible tags automatically:
       #   - the short commit SHA, for traceability
       #   - "latest", always pointing at the newest main build
@@ -58,7 +65,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=sha,prefix=,format=short
             type=raw,value=latest
@@ -70,5 +77,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # Plain image, no attestation manifest -- one less thing GHCR
+          # can reject on a first publish.
+          provenance: false
           cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # A flaky Actions cache service must not fail the deploy.
+          cache-to: type=gha,mode=max,ignore-error=true

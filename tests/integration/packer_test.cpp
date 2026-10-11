@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 #include "BoxList.h"
@@ -212,6 +213,47 @@ TEST(Packer, LinkedItemsStayInTheSameBox) {
   EXPECT_EQ(response.boxes.begin()->GetItems().Count(), 2u);
 }
 
+TEST(Packer, DifferentBoxGroupsAreNeverMixedInOneBox) {
+  // A BoxGroup means "don't mix with a different group", not "must all be
+  // in one box together" -- so with 2 GROUP-1 + 2 GROUP-2 items and only
+  // room for 2 per box, every packed box must be single-group.
+  ItemList items;
+  items.Insert(std::make_shared<ConcreteLinkedItem>(ConcreteItem("A1", "A1", 50, 50, 50, 1.0), "GROUP-1"));
+  items.Insert(std::make_shared<ConcreteLinkedItem>(ConcreteItem("A2", "A2", 50, 50, 50, 1.0), "GROUP-1"));
+  items.Insert(std::make_shared<ConcreteLinkedItem>(ConcreteItem("B1", "B1", 50, 50, 50, 1.0), "GROUP-2"));
+  items.Insert(std::make_shared<ConcreteLinkedItem>(ConcreteItem("B2", "B2", 50, 50, 50, 1.0), "GROUP-2"));
+  BoxList boxes;
+  boxes.Insert(MakeBox("BOX", 100, 50, 50));  // fits exactly 2 of these per box
+
+  PackResponse response = Packer().Pack(items, boxes);
+
+  ASSERT_TRUE(response.success);
+  for (const auto& box : response.boxes) {
+    std::set<std::string> groups_in_box;
+    for (const auto& packed : box.GetItems()) {
+      groups_in_box.insert(dynamic_cast<const fitsolver::LinkedItem&>(*packed.GetItem()).GetBoxGroup());
+    }
+    EXPECT_LE(groups_in_box.size(), 1u) << "box " << box.GetBox()->GetReference() << " mixes groups";
+  }
+}
+
+TEST(Packer, ASingleBoxGroupCanSpreadAcrossMultipleBoxes) {
+  // 3 GROUP-1 items but only room for 2 per box: the group does NOT have
+  // to fit in one box, it just can't share a box with a DIFFERENT group.
+  ItemList items;
+  for (int i = 0; i < 3; ++i) {
+    items.Insert(std::make_shared<ConcreteLinkedItem>(
+        ConcreteItem("G" + std::to_string(i), "G", 50, 50, 50, 1.0), "GROUP-1"));
+  }
+  BoxList boxes;
+  boxes.Insert(MakeBox("BOX", 100, 50, 50));  // fits 2 per box, unlimited supply
+
+  PackResponse response = Packer().Pack(items, boxes);
+
+  EXPECT_TRUE(response.success);
+  EXPECT_EQ(response.GetTotalPlacedCount(), 3);
+}
+
 TEST(Packer, VolumeUtilisationAndRemainingSpaceAreConsistent) {
   ItemList items;
   items.Insert(MakeItem("ITM-1", 50, 50, 50, 1.0));
@@ -350,6 +392,11 @@ TEST(ConcreteBox, RejectsMissingReference) {
 }
 
 TEST(ItemList, SortsByLinkedGroupVolumeWeightAndCode) {
+  // Ungrouped items sort before any group (mirrors BoxPacker's
+  // DefaultItemSorter: PHP's `$groupA <=> $groupB` treats an ungrouped
+  // item's null group as "", which sorts before any group name) --
+  // among themselves, ungrouped items still order by volume then weight
+  // then code, same as grouped items do within a shared group.
   ItemList items;
   items.Insert(MakeItem("B", 1, 1, 1, 1));
   items.Insert(MakeItem("A", 1, 1, 1, 2));
@@ -361,11 +408,11 @@ TEST(ItemList, SortsByLinkedGroupVolumeWeightAndCode) {
 
   const auto& sorted = items.SortedItems();
   ASSERT_EQ(sorted.size(), 5u);
-  EXPECT_EQ(sorted[0]->GetItemCode(), "GROUP-A");
-  EXPECT_EQ(sorted[1]->GetItemCode(), "GROUP-B");
-  EXPECT_EQ(sorted[2]->GetItemCode(), "LARGE");
-  EXPECT_EQ(sorted[3]->GetItemCode(), "A");
-  EXPECT_EQ(sorted[4]->GetItemCode(), "B");
+  EXPECT_EQ(sorted[0]->GetItemCode(), "LARGE");
+  EXPECT_EQ(sorted[1]->GetItemCode(), "A");
+  EXPECT_EQ(sorted[2]->GetItemCode(), "B");
+  EXPECT_EQ(sorted[3]->GetItemCode(), "GROUP-A");
+  EXPECT_EQ(sorted[4]->GetItemCode(), "GROUP-B");
 }
 
 TEST(ItemList, MutationInvalidatesSortCacheAndRemovalUsesIdentity) {
@@ -559,6 +606,95 @@ TEST(WeightRedistributor, EmptyAndAlreadyBalancedResultsRemainStable) {
   const fitsolver::PackedBoxList result = redistributor.Redistribute(balanced);
   EXPECT_EQ(result.Count(), 2u);
   EXPECT_DOUBLE_EQ(result.GetWeightVariance(), 0.0);
+}
+
+TEST(VolumePacker, StabiliserOrdersLayersByDescendingFootprint) {
+  // TALL has the larger volume (90,000 vs 81,000) so it sorts first and,
+  // being the very first item, its own depth (100) sets the first
+  // layer's guideline depth -- filling the whole box height and leaving
+  // no vertical room for WIDE in that layer. WIDE's 90x90 footprint
+  // can't share TALL's layer sideways either (TALL already claims the
+  // full 100x100 floor for that layer), so WIDE is forced into its own,
+  // second layer, built AFTER TALL despite having the much bigger
+  // footprint (8,100 vs 900). LayerStabiliser -- BoxPacker's actual
+  // gravity mechanism, which supersedes this project's earlier per-item
+  // 75%-support-ratio check -- reorders whole layers by descending
+  // footprint and re-stacks their Z contiguously from the floor, so the
+  // build order must get corrected: WIDE ends up at z=0, TALL on top.
+  ItemList items;
+  items.Insert(MakeItem("TALL", 30, 30, 100, 1, Rotation::kNever));
+  items.Insert(MakeItem("WIDE", 90, 90, 10, 1, Rotation::kNever));
+
+  const fitsolver::PackedBox packed =
+      fitsolver::VolumePacker(MakeBox("BOX", 100, 100, 110)).Pack(items);
+  const auto& placed = packed.GetItems().ToVector();
+  ASSERT_EQ(placed.size(), 2u);
+
+  std::unordered_map<std::string, double> z_by_code;
+  for (const auto& it : placed) z_by_code[it.GetItem()->GetItemCode()] = it.GetZ();
+  EXPECT_DOUBLE_EQ(z_by_code["WIDE"], 0.0) << "the larger-footprint layer must be stacked first";
+  EXPECT_DOUBLE_EQ(z_by_code["TALL"], 10.0) << "TALL must stack on top of WIDE's layer";
+
+  // No overlaps at all, anywhere -- a hard invariant regardless of layer
+  // order.
+  for (std::size_t i = 0; i < placed.size(); ++i) {
+    for (std::size_t j = i + 1; j < placed.size(); ++j) {
+      const auto& a = placed[i];
+      const auto& b = placed[j];
+      const bool separated = a.GetX() + a.GetWidth() <= b.GetX() + 1e-6 ||
+                              b.GetX() + b.GetWidth() <= a.GetX() + 1e-6 ||
+                              a.GetY() + a.GetLength() <= b.GetY() + 1e-6 ||
+                              b.GetY() + b.GetLength() <= a.GetY() + 1e-6 ||
+                              a.GetZ() + a.GetDepth() <= b.GetZ() + 1e-6 ||
+                              b.GetZ() + b.GetDepth() <= a.GetZ() + 1e-6;
+      EXPECT_TRUE(separated) << a.GetItem()->GetItemCode() << " overlaps "
+                              << b.GetItem()->GetItemCode();
+    }
+  }
+}
+
+TEST(VolumePacker, PlacementListIsBottomUp) {
+  // More items than fit in one layer, so the pack spans several layers;
+  // the emitted order must never step down in z (a build sequence a
+  // worker can actually follow).
+  ItemList items;
+  for (int i = 0; i < 12; ++i) items.Insert(MakeItem("I" + std::to_string(i), 25, 25, 25, 1));
+
+  const fitsolver::PackedBox packed =
+      fitsolver::VolumePacker(MakeBox("BOX", 60, 60, 60)).Pack(items);
+  const auto& placed = packed.GetItems().ToVector();
+  ASSERT_GT(placed.size(), 1u);
+  ASSERT_EQ(placed.size(), 8u);  // Two layers of four 25-unit cubes.
+  ASSERT_TRUE(std::any_of(placed.begin(), placed.end(),
+                          [](const auto& item) { return item.GetZ() > 1e-6; }))
+      << "fixture must exercise ordering across layers";
+  for (std::size_t i = 1; i < placed.size(); ++i) {
+    EXPECT_GE(placed[i].GetZ() + 1e-6, placed[i - 1].GetZ())
+        << "placement " << i << " drops below the previous one";
+  }
+}
+
+TEST(VolumePacker, StackedItemsAreFullySupportedByTheItemBelow) {
+  // BASE fills the whole floor; TOP is the same footprint, so LayerPacker's
+  // recursive "stack on top" region (bounded exactly by BASE's own
+  // width/length) is the only place TOP can go. That region is always a
+  // subset of the item that spawned it, so a stacked item is fully
+  // (not just partially) supported by construction -- a stronger, and
+  // still faithfully-ported, guarantee than this project's old per-item
+  // 75%-support-ratio check.
+  ItemList items;
+  items.Insert(MakeItem("BASE", 100, 100, 20, 1, Rotation::kNever));
+  items.Insert(MakeItem("TOP", 100, 100, 10, 1, Rotation::kNever));
+  const auto packed = fitsolver::VolumePacker(MakeBox("BOX", 100, 100, 30)).Pack(items);
+  const auto& placed = packed.GetItems().ToVector();
+
+  ASSERT_EQ(placed.size(), 2u);
+  EXPECT_EQ(placed[0].GetItem()->GetItemCode(), "BASE");
+  EXPECT_DOUBLE_EQ(placed[0].GetZ(), 0.0);
+  EXPECT_EQ(placed[1].GetItem()->GetItemCode(), "TOP");
+  EXPECT_DOUBLE_EQ(placed[1].GetX(), 0.0);
+  EXPECT_DOUBLE_EQ(placed[1].GetY(), 0.0);
+  EXPECT_DOUBLE_EQ(placed[1].GetZ(), 20.0);
 }
 
 TEST(VolumePacker, WrapsAcrossRowsAndLayersWithoutOverlap) {

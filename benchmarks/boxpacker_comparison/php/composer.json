@@ -1,0 +1,11 @@
+{
+    "name": "fitsolver/boxpacker-comparison",
+    "description": "Runs dvdoug/boxpacker over the same random scenarios as fitsolver_boxpacker_bench, for a like-for-like box-count and solve-time comparison.",
+    "require": {
+        "php": ">=8.1",
+        "dvdoug/boxpacker": "^4.3"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

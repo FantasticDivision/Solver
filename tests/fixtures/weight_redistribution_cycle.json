@@ -1,0 +1,421 @@
+{
+  "items": [
+    {
+      "ItemCode": "ITEM-0::0",
+      "ItemReference": "Random item 0",
+      "Width": 362,
+      "Length": 262,
+      "Depth": 103,
+      "Weight": 4.93,
+      "AllowedRotation": "KeepFlat"
+    },
+    {
+      "ItemCode": "ITEM-0::1",
+      "ItemReference": "Random item 0",
+      "Width": 362,
+      "Length": 262,
+      "Depth": 103,
+      "Weight": 4.93,
+      "AllowedRotation": "KeepFlat"
+    },
+    {
+      "ItemCode": "ITEM-0::2",
+      "ItemReference": "Random item 0",
+      "Width": 362,
+      "Length": 262,
+      "Depth": 103,
+      "Weight": 4.93,
+      "AllowedRotation": "KeepFlat"
+    },
+    {
+      "ItemCode": "ITEM-1::0",
+      "ItemReference": "Random item 1",
+      "Width": 515,
+      "Length": 155,
+      "Depth": 129,
+      "Weight": 0.16,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-1::1",
+      "ItemReference": "Random item 1",
+      "Width": 515,
+      "Length": 155,
+      "Depth": 129,
+      "Weight": 0.16,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-2::0",
+      "ItemReference": "Random item 2",
+      "Width": 162,
+      "Length": 235,
+      "Depth": 344,
+      "Weight": 4.37,
+      "AllowedRotation": "KeepFlat"
+    },
+    {
+      "ItemCode": "ITEM-3::0",
+      "ItemReference": "Random item 3",
+      "Width": 476,
+      "Length": 244,
+      "Depth": 467,
+      "Weight": 13.94,
+      "AllowedRotation": "Never"
+    },
+    {
+      "ItemCode": "ITEM-3::1",
+      "ItemReference": "Random item 3",
+      "Width": 476,
+      "Length": 244,
+      "Depth": 467,
+      "Weight": 13.94,
+      "AllowedRotation": "Never"
+    },
+    {
+      "ItemCode": "ITEM-4::0",
+      "ItemReference": "Random item 4",
+      "Width": 328,
+      "Length": 57,
+      "Depth": 508,
+      "Weight": 4.27,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-4::1",
+      "ItemReference": "Random item 4",
+      "Width": 328,
+      "Length": 57,
+      "Depth": 508,
+      "Weight": 4.27,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-4::2",
+      "ItemReference": "Random item 4",
+      "Width": 328,
+      "Length": 57,
+      "Depth": 508,
+      "Weight": 4.27,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-4::3",
+      "ItemReference": "Random item 4",
+      "Width": 328,
+      "Length": 57,
+      "Depth": 508,
+      "Weight": 4.27,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-4::4",
+      "ItemReference": "Random item 4",
+      "Width": 328,
+      "Length": 57,
+      "Depth": 508,
+      "Weight": 4.27,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-4::5",
+      "ItemReference": "Random item 4",
+      "Width": 328,
+      "Length": 57,
+      "Depth": 508,
+      "Weight": 4.27,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-4::6",
+      "ItemReference": "Random item 4",
+      "Width": 328,
+      "Length": 57,
+      "Depth": 508,
+      "Weight": 4.27,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-4::7",
+      "ItemReference": "Random item 4",
+      "Width": 328,
+      "Length": 57,
+      "Depth": 508,
+      "Weight": 4.27,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-4::8",
+      "ItemReference": "Random item 4",
+      "Width": 328,
+      "Length": 57,
+      "Depth": 508,
+      "Weight": 4.27,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-5::0",
+      "ItemReference": "Random item 5",
+      "Width": 393,
+      "Length": 233,
+      "Depth": 287,
+      "Weight": 12.61,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-5::1",
+      "ItemReference": "Random item 5",
+      "Width": 393,
+      "Length": 233,
+      "Depth": 287,
+      "Weight": 12.61,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-5::2",
+      "ItemReference": "Random item 5",
+      "Width": 393,
+      "Length": 233,
+      "Depth": 287,
+      "Weight": 12.61,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-5::3",
+      "ItemReference": "Random item 5",
+      "Width": 393,
+      "Length": 233,
+      "Depth": 287,
+      "Weight": 12.61,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-5::4",
+      "ItemReference": "Random item 5",
+      "Width": 393,
+      "Length": 233,
+      "Depth": 287,
+      "Weight": 12.61,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-5::5",
+      "ItemReference": "Random item 5",
+      "Width": 393,
+      "Length": 233,
+      "Depth": 287,
+      "Weight": 12.61,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-5::6",
+      "ItemReference": "Random item 5",
+      "Width": 393,
+      "Length": 233,
+      "Depth": 287,
+      "Weight": 12.61,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-5::7",
+      "ItemReference": "Random item 5",
+      "Width": 393,
+      "Length": 233,
+      "Depth": 287,
+      "Weight": 12.61,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-6::0",
+      "ItemReference": "Random item 6",
+      "Width": 78,
+      "Length": 207,
+      "Depth": 403,
+      "Weight": 0.92,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-6::1",
+      "ItemReference": "Random item 6",
+      "Width": 78,
+      "Length": 207,
+      "Depth": 403,
+      "Weight": 0.92,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-6::2",
+      "ItemReference": "Random item 6",
+      "Width": 78,
+      "Length": 207,
+      "Depth": 403,
+      "Weight": 0.92,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-6::3",
+      "ItemReference": "Random item 6",
+      "Width": 78,
+      "Length": 207,
+      "Depth": 403,
+      "Weight": 0.92,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-6::4",
+      "ItemReference": "Random item 6",
+      "Width": 78,
+      "Length": 207,
+      "Depth": 403,
+      "Weight": 0.92,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-6::5",
+      "ItemReference": "Random item 6",
+      "Width": 78,
+      "Length": 207,
+      "Depth": 403,
+      "Weight": 0.92,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-7::0",
+      "ItemReference": "Random item 7",
+      "Width": 590,
+      "Length": 423,
+      "Depth": 600,
+      "Weight": 11.28,
+      "AllowedRotation": "Never"
+    },
+    {
+      "ItemCode": "ITEM-7::1",
+      "ItemReference": "Random item 7",
+      "Width": 590,
+      "Length": 423,
+      "Depth": 600,
+      "Weight": 11.28,
+      "AllowedRotation": "Never"
+    },
+    {
+      "ItemCode": "ITEM-7::2",
+      "ItemReference": "Random item 7",
+      "Width": 590,
+      "Length": 423,
+      "Depth": 600,
+      "Weight": 11.28,
+      "AllowedRotation": "Never"
+    },
+    {
+      "ItemCode": "ITEM-7::3",
+      "ItemReference": "Random item 7",
+      "Width": 590,
+      "Length": 423,
+      "Depth": 600,
+      "Weight": 11.28,
+      "AllowedRotation": "Never"
+    },
+    {
+      "ItemCode": "ITEM-7::4",
+      "ItemReference": "Random item 7",
+      "Width": 590,
+      "Length": 423,
+      "Depth": 600,
+      "Weight": 11.28,
+      "AllowedRotation": "Never"
+    },
+    {
+      "ItemCode": "ITEM-7::5",
+      "ItemReference": "Random item 7",
+      "Width": 590,
+      "Length": 423,
+      "Depth": 600,
+      "Weight": 11.28,
+      "AllowedRotation": "Never"
+    },
+    {
+      "ItemCode": "ITEM-7::6",
+      "ItemReference": "Random item 7",
+      "Width": 590,
+      "Length": 423,
+      "Depth": 600,
+      "Weight": 11.28,
+      "AllowedRotation": "Never"
+    },
+    {
+      "ItemCode": "ITEM-8::0",
+      "ItemReference": "Random item 8",
+      "Width": 201,
+      "Length": 53,
+      "Depth": 446,
+      "Weight": 7.65,
+      "AllowedRotation": "Never"
+    },
+    {
+      "ItemCode": "ITEM-9::0",
+      "ItemReference": "Random item 9",
+      "Width": 424,
+      "Length": 383,
+      "Depth": 402,
+      "Weight": 0.01,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-9::1",
+      "ItemReference": "Random item 9",
+      "Width": 424,
+      "Length": 383,
+      "Depth": 402,
+      "Weight": 0.01,
+      "AllowedRotation": "BestFit"
+    },
+    {
+      "ItemCode": "ITEM-9::2",
+      "ItemReference": "Random item 9",
+      "Width": 424,
+      "Length": 383,
+      "Depth": 402,
+      "Weight": 0.01,
+      "AllowedRotation": "BestFit"
+    }
+  ],
+  "boxes": [
+    {
+      "Reference": "BOX-0",
+      "Width": 1028,
+      "Length": 1292,
+      "Depth": 794,
+      "MaxWeight": 9.76,
+      "BoxWeight": 0.53,
+      "Active": true
+    },
+    {
+      "Reference": "BOX-1",
+      "Width": 1177,
+      "Length": 985,
+      "Depth": 1207,
+      "MaxWeight": 18.01,
+      "BoxWeight": 0.95,
+      "Active": true
+    },
+    {
+      "Reference": "BOX-2",
+      "Width": 734,
+      "Length": 763,
+      "Depth": 1169,
+      "MaxWeight": 38.62,
+      "BoxWeight": 1.95,
+      "Active": true,
+      "MaximumBoxes": 16
+    },
+    {
+      "Reference": "BOX-3",
+      "Width": 830,
+      "Length": 1044,
+      "Depth": 898,
+      "MaxWeight": 12.19,
+      "BoxWeight": 0.47,
+      "Active": true
+    }
+  ]
+}

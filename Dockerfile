@@ -36,15 +36,24 @@ COPY third_party/nlohmann ./third_party/nlohmann
 # never ships. CI (see .github/workflows/ci.yml) already builds and
 # runs the full test suite on every push/PR, so this doesn't reduce
 # actual test coverage.
+# FITSOLVER_BUILD_BENCHMARKS=OFF: the manual timing/benchmark targets'
+# sources live under tests/ and benchmarks/, which aren't copied above,
+# and CMake fails to generate *any* target whose source is missing --
+# which is what broke this build from 2026-08-19 (fitsolver_timed_test).
 RUN cmake -B build -DCMAKE_BUILD_TYPE=Release \
       -DFITSOLVER_BUILD_PYTHON=OFF -DFITSOLVER_BUILD_TESTS=OFF \
+      -DFITSOLVER_BUILD_BENCHMARKS=OFF \
     && cmake --build build --config Release --target fitsolver_app --parallel
 
 # ---------- Runtime stage ----------
 FROM ubuntu:24.04 AS runtime
 
+# libssl3t64, not libssl3: Ubuntu 24.04's 64-bit time_t transition
+# renamed the OpenSSL 3 runtime package. `libssl3` does not resolve on
+# noble ("Unable to locate package"), which is what was failing the
+# image build on every commit.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 \
+    libssl3t64 \
     zlib1g \
     libuuid1 \
     libjsoncpp25 \
