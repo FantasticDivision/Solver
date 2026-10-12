@@ -1,5 +1,54 @@
 # FantasticSolver test guide
 
+## CI timing budget
+
+CI has a separate **Check 2 ms C++ test budget** step after the correctness,
+Python binding and fuzz checks. It runs every enabled GoogleTest case, including
+`ThommeaxBenchmark.Simple`, `SemiRealistic` and `Chaotic` (the complex scenario).
+The job summary lists each test's median, minimum and maximum time in milliseconds,
+sample count and pass/fail result. The same Markdown report is downloadable as the
+`test-timings` artifact, including when the budget fails.
+
+The timing run uses a Release build, a monotonic high-resolution clock, one full
+warm-up iteration and five measured iterations in the same process. A test must
+have a median **strictly below 2 ms**, and all six iterations must pass correctness.
+Missing samples, skipped tests and an empty test selection fail the check.
+The median reduces sensitivity to occasional scheduling delays; this is not a
+guarantee that every invocation finishes in 2 ms.
+
+This measures each complete C++ test, including per-test setup/teardown, fixture
+loading, parsing and assertions. Process startup and suite-level setup are excluded.
+A test that solves 100 requests is measured as one complete test, not divided by
+100. Python tests, fuzzing and the separate PHP comparison benchmark are not subject
+to this budget. The target is intentionally enforced even if the current baseline
+exceeds it; enabling the check does not make the solver faster.
+
+To reproduce in PowerShell (use a fresh Release build directory):
+
+```powershell
+cmake -S . -B build-timing -DCMAKE_BUILD_TYPE=Release -DFITSOLVER_BUILD_PYTHON=OFF
+cmake --build build-timing --config Release --target fitsolver_tests
+$env:FITSOLVER_TIMING_REPORT = "$PWD/build-timing/test-timings.md"
+try {
+    # For Visual Studio generators use build-timing/Release/fitsolver_tests.exe.
+    ./build-timing/fitsolver_tests.exe --gtest_brief=1
+} finally {
+    Remove-Item Env:FITSOLVER_TIMING_REPORT
+}
+```
+
+On Linux/macOS:
+
+```bash
+FITSOLVER_TIMING_REPORT=build/test-timings.md ./build/fitsolver_tests --gtest_brief=1
+```
+
+Without `FITSOLVER_TIMING_REPORT`, the executable and CTest run the normal
+correctness suite once, without enforcing a performance budget. A GoogleTest
+filter can be used for local investigation; CI intentionally runs the full suite.
+
+## Coverage reference
+
 This document describes the 79 GoogleTest cases registered in `fitsolver_tests`.
 The diagrams show how the tests divide the solver into layers; the tables explain
 the exact behavior checked by every test.

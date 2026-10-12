@@ -137,6 +137,7 @@ if(FITSOLVER_BUILD_TESTS)
   enable_testing()
 
   add_executable(fitsolver_tests
+    tests/test_main.cpp
     tests/integration/packer_test.cpp
     tests/integration/thommeax_benchmark_test.cpp
     tests/integration/weight_redistribution_test.cpp
@@ -154,7 +155,7 @@ if(FITSOLVER_BUILD_TESTS)
   target_link_libraries(fitsolver_tests
     PRIVATE
       fitsolver_core
-      gtest_main
+      gtest
   )
   # Absolute path so thommeax_benchmark_test.cpp can load its fixture JSON
   # regardless of the test binary's working directory (ctest vs running it

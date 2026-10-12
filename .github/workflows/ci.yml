@@ -92,3 +92,28 @@ jobs:
           name: fuzz-pack-request-crash
           path: ${{ github.workspace }}/build-fuzz/fuzz-artifacts/
           if-no-files-found: ignore
+
+      # Separate from correctness: repeated in-process measurements, including
+      # Thommeax Chaotic. A median >= 2 ms fails this step, not just a warning.
+      - name: Check 2 ms C++ test budget
+        id: timings
+        env:
+          FITSOLVER_TIMING_REPORT: ${{ github.workspace }}/build/test-timings.md
+        run: ./build/fitsolver_tests --gtest_brief=1
+
+      - name: Show test timings in job summary
+        if: ${{ always() && steps.timings.outcome != 'skipped' }}
+        run: |
+          if [ -f build/test-timings.md ]; then
+            cat build/test-timings.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Timing report missing: the test process did not finish successfully." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload test timings
+        if: ${{ always() && steps.timings.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-timings
+          path: build/test-timings.md
+          if-no-files-found: warn
