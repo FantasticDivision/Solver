@@ -12,9 +12,9 @@
 #include <chrono>
 #include <sstream>
 
-#include "SolutionCache.h" 
 #include "PackRequest.h"
 #include "PackResponse.h"
+#include "SolutionCache.h"
 #include "Packer.h"
 
 namespace {

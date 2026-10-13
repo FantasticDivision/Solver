@@ -59,6 +59,7 @@ set(FITSOLVER_CORE_SOURCES
   src/Packer.cpp
   src/PackRequest.cpp
   src/PackResponse.cpp
+  src/SolutionCache.cpp
 )
 
 add_library(fitsolver_core ${FITSOLVER_CORE_SOURCES})
