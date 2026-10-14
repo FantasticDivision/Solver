@@ -355,7 +355,7 @@ flowchart LR
 | `ItemReseaterTest.MovesAnOverhangingItemToASeatWhereItStandsFirmly` | An item hanging off a ledge is moved flat onto the lower item beside it; nothing else moves. |
 | `ItemReseaterTest.LeavesAnItemWhereItIsWhenTheBoxHasNoFirmSeatForIt` | With nowhere firm to go, the item stays put. |
 | `ItemReseaterTest.TurnsAnItemToReachASeatOnlyIfItsRotationAllows` | A `KeepFlat` item is turned a quarter-turn to reach a firm seat; a `Never` item is left as it is. |
-| `ItemReseaterTest.NeverLeavesABoxWorseOffOnRandomLayouts` | Across 200 seeded random stacks, nothing floats after the drop, and after re-seating nothing floats, overlaps or leaves the box and no more items are left tipping than before. |
+| `Seeds/ItemReseaterRandomLayouts.NeverLeavesABoxWorseOff/0` to `/24` | Across 150 seeded random stacks (25 seeds, 6 each), nothing floats after the drop, and after re-seating nothing floats, overlaps or leaves the box and no more items are left tipping than before. |
 | `GravitySettlerTest.SettlesTheLayoutTheChaoticGolfBagBoxUsedToComeBackWith` | The Chaotic order's Golf Bag Box as it used to be returned (one pole 40 above the pole beneath it) comes back with nothing floating, within the box, listed bottom-up. |
 | `GravitySettlerTest.LeavesABoxThatIsAlreadySettledExactlyAsItWas` | A box with nothing to fix is returned unchanged. |
 

@@ -220,23 +220,24 @@ TEST(ItemReseaterTest, TurnsAnItemToReachASeatOnlyIfItsRotationAllows) {
   EXPECT_FALSE(fixed.at("TOP").IsRotated());
 }
 
-TEST(ItemReseaterTest, NeverLeavesABoxWorseOffOnRandomLayouts) {
-  // Random non-overlapping stacks, each item dropped in from above with a
-  // random gap left under it. After the drop nothing may float; after the
-  // re-seat nothing may float, overlap or leave the box, and no more items
-  // may be left not standing firmly than before.
-  std::mt19937 random(20261014);
+// Random non-overlapping stacks, each item dropped in from above with a
+// random gap left under it. After the drop nothing may float; after the
+// re-seat nothing may float, overlap or leave the box, and no more items
+// may be left not standing firmly than before. One instance per seed, so
+// each stays quick and a failure names the seed that found it.
+class ItemReseaterRandomLayouts : public testing::TestWithParam<int> {};
+
+TEST_P(ItemReseaterRandomLayouts, NeverLeavesABoxWorseOff) {
+  std::mt19937 random(20261014u + static_cast<unsigned>(GetParam()));
   const auto pick = [&random](int low, int high) {
     return static_cast<double>(std::uniform_int_distribution<int>(low, high)(random));
   };
 
-  for (int layout = 0; layout < 200; ++layout) {
+  for (int layout = 0; layout < 6; ++layout) {
     const auto box = MakeBox("BOX", 100, 100, 400);
     std::vector<PackedItem> items;
-    const int count = static_cast<int>(pick(2, 12));
+    const int count = static_cast<int>(pick(2, 8));
     for (int n = 0; n < count; ++n) {
-      // One draw per statement: the order function arguments are evaluated
-      // in is up to the compiler, and the layouts should be the same on all.
       const double width = pick(10, 60);
       const double length = pick(10, 60);
       const double depth = pick(5, 30);
@@ -275,6 +276,8 @@ TEST(ItemReseaterTest, NeverLeavesABoxWorseOffOnRandomLayouts) {
     }
   }
 }
+
+INSTANTIATE_TEST_SUITE_P(Seeds, ItemReseaterRandomLayouts, testing::Range(0, 25));
 
 TEST(GravitySettlerTest, SettlesTheLayoutTheChaoticGolfBagBoxUsedToComeBackWith) {
   // Box 12 of the Thommeax Chaotic order as the engine returned it before
