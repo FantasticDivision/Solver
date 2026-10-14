@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "GravitySettler.h"
 #include "LimitedSupplyBox.h"
 #include "LinkedItem.h"
 #include "VolumePacker.h"
@@ -234,6 +235,11 @@ PackResponse Packer::Pack(const ItemList& items, const BoxList& boxes) const {
     WeightRedistributor redistributor(boxes);
     packed_boxes = redistributor.Redistribute(packed_boxes);
   }
+
+  // Every packing decision is made by now. Let gravity act on the boxes
+  // that are actually going out, so nothing in them floats.
+  const GravitySettler settler;
+  packed_boxes.Apply([&settler](const PackedBox& box) { return settler.Settle(box); });
 
   ItemList unplaced(items.GetSorter());
   for (const auto& item : best.unplaced) unplaced.Insert(item);

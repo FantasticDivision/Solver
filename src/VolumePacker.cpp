@@ -1,16 +1,11 @@
 #include "VolumePacker.h"
 
 #include <algorithm>
-#include <cmath>
 
 #include "LayerStabiliser.h"
 #include "OrientatedItemFactory.h"
 
 namespace fitsolver {
-
-namespace {
-constexpr double kOrderEps = 1e-6;
-}  // namespace
 
 VolumePacker::VolumePacker(BoxPtr box) : box_(std::move(box)) {}
 
@@ -205,11 +200,7 @@ PackedBox VolumePacker::FinaliseOrder(PackedBox box) const {
   if (box.GetItems().Count() <= 1) return box;
 
   std::vector<PackedItem> ordered = box.GetItems().ToVector();
-  std::stable_sort(ordered.begin(), ordered.end(), [](const PackedItem& a, const PackedItem& b) {
-    if (std::abs(a.GetZ() - b.GetZ()) > kOrderEps) return a.GetZ() < b.GetZ();
-    if (std::abs(a.GetY() - b.GetY()) > kOrderEps) return a.GetY() < b.GetY();
-    return a.GetX() < b.GetX();
-  });
+  SortBottomUp(ordered);
 
   PackedBox reordered(box.GetBox());
   for (auto& item : ordered) reordered.AddItem(std::move(item));

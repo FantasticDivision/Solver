@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "OrientatedItem.h"
 #include "nlohmann/json.hpp"
 
@@ -36,5 +38,10 @@ class PackedItem {
   double y_;
   double z_;
 };
+
+// Orders placements bottom layer first (z), then back to front (y), then
+// left to right (x), so a box's items read as a sequence a worker could
+// physically follow.
+void SortBottomUp(std::vector<PackedItem>& items);
 
 }  // namespace fitsolver

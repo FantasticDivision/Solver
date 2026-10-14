@@ -51,6 +51,9 @@ set(FITSOLVER_CORE_SOURCES
   src/WorkingVolume.cpp
   src/PackedLayer.cpp
   src/LayerStabiliser.cpp
+  src/Support.cpp
+  src/GravitySettler.cpp
+  src/ItemReseater.cpp
   src/OrientatedItemFactory.cpp
   src/OrientatedItemSorter.cpp
   src/LayerPacker.cpp
@@ -151,6 +154,7 @@ if(FITSOLVER_BUILD_TESTS)
     tests/unit/request_classes_test.cpp
     tests/unit/packing_classes_test.cpp
     tests/unit/entropy_test.cpp
+    tests/unit/gravity_test.cpp
   )
   target_link_libraries(fitsolver_tests
     PRIVATE

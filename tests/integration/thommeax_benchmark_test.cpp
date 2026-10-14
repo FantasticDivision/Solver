@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <map>
 #include <set>
@@ -106,10 +108,36 @@ void ExpectEveryScenarioUnitPlaced(const std::string& scenario,
   EXPECT_EQ(placed_codes, expected_codes);
 }
 
+// Gravity acts along -Z (Depth is vertical; z = 0 is the box floor). Every
+// item off the floor must have another item's top meeting its underside.
+// Checked here without the engine's own Support helpers, so a mistake in
+// those can't hide itself.
+void ExpectNothingFloats(const std::string& scenario, const fitsolver::PackResponse& response) {
+  SCOPED_TRACE(scenario);
+  std::size_t box_number = 0;
+  for (const auto& box : response.boxes) {
+    ++box_number;
+    const auto& items = box.GetItems().ToVector();
+    for (const auto& item : items) {
+      if (item.GetZ() <= 1e-6) continue;
+      const bool held_up = std::any_of(items.begin(), items.end(), [&](const auto& other) {
+        return std::abs(other.GetZ() + other.GetDepth() - item.GetZ()) <= 1e-6 &&
+               item.GetX() + item.GetWidth() > other.GetX() + 1e-6 &&
+               other.GetX() + other.GetWidth() > item.GetX() + 1e-6 &&
+               item.GetY() + item.GetLength() > other.GetY() + 1e-6 &&
+               other.GetY() + other.GetLength() > item.GetY() + 1e-6;
+      });
+      EXPECT_TRUE(held_up) << item.GetItem()->GetItemCode() << " floats at z=" << item.GetZ()
+                           << " in box " << box_number << " (" << box.GetBox()->GetReference() << ")";
+    }
+  }
+}
+
 TEST(ThommeaxBenchmark, Simple) {
   // RESULTS.md: 2 boxes used, 3 of 3 units packed.
   const fitsolver::PackResponse response = PackScenario("Simple");
   ExpectEveryScenarioUnitPlaced("Simple", response, 3);
+  ExpectNothingFloats("Simple", response);
 
   EXPECT_TRUE(response.unplaced_items.Empty())
       << response.unplaced_items.Count() << " unit(s) left unplaced";
@@ -121,6 +149,7 @@ TEST(ThommeaxBenchmark, SemiRealistic) {
   // RESULTS.md: 4 boxes used, 115 of 115 units packed.
   const fitsolver::PackResponse response = PackScenario("SemiRealistic");
   ExpectEveryScenarioUnitPlaced("SemiRealistic", response, 115);
+  ExpectNothingFloats("SemiRealistic", response);
 
   EXPECT_TRUE(response.unplaced_items.Empty())
       << response.unplaced_items.Count() << " unit(s) left unplaced";
@@ -191,6 +220,7 @@ TEST(ThommeaxBenchmark, Chaotic) {
   // unplaced; the same two-pass split packs everything in 62.
   const fitsolver::PackResponse response = PackScenario("Chaotic");
   ExpectEveryScenarioUnitPlaced("Chaotic", response, 300);
+  ExpectNothingFloats("Chaotic", response);
 
   EXPECT_TRUE(response.unplaced_items.Empty())
       << response.unplaced_items.Count() << " unit(s) left unplaced";

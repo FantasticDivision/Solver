@@ -63,8 +63,8 @@ class VolumePacker {
   std::vector<PackedLayer> CorrectLayerRotation(std::vector<PackedLayer> layers,
                                                  double box_width) const;
 
-  // Reorders the finished box's items bottom layer first, then
-  // front-to-back, then left-to-right, so the response reads as a
+  // Reorders the finished box's items bottom layer first, then back to
+  // front, then left to right (SortBottomUp), so the response reads as a
   // sequence a worker could physically follow.
   PackedBox FinaliseOrder(PackedBox box) const;
 

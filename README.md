@@ -36,6 +36,9 @@ src/
   LayerPacker.h/.cpp            # Fills one layer: shelf row, then stack/gap-fill
   VolumePacker.h/.cpp          # Packs items into ONE box instance
   WeightRedistributor.h/.cpp   # Post-pass: evens out weight between boxes used
+  Support.h/.cpp               # What a packed item rests on (gravity is -Z)
+  ItemReseater.h/.cpp          # Moves an item that would tip to a firmer seat
+  GravitySettler.h/.cpp        # Post-pass: drops every item onto its support
   Packer.h/.cpp                # Top-level entry point: fitsolver::Packer().Pack(...)
   PackRequest.h/.cpp, PackResponse.h/.cpp  # Request/response + JSON (de)serialisation
   Rotation.h/.cpp               # Never / KeepFlat / BestFit
@@ -256,8 +259,16 @@ classDiagram
     class WeightRedistributor {
         +Redistribute(PackedBoxList) PackedBoxList
     }
+    class GravitySettler {
+        +Settle(PackedBox) PackedBox
+    }
+    class ItemReseater {
+        +Reseat(PackedItem[]) PackedItem[]
+    }
     Packer ..> VolumePacker : tries each active box type via
     Packer ..> WeightRedistributor : rebalances weight via, after packing
+    Packer ..> GravitySettler : settles every finished box via, last of all
+    GravitySettler ..> ItemReseater : moves items that would tip via
 
     class LayerPacker {
         +PackLayer(...) PackedLayer
@@ -331,6 +342,14 @@ up at the bottom) and tops it off with `VoidFinder` filling whatever
 rectangular gaps remain. It also tries the box both ways round and every
 orientation of the very first item, keeping whichever attempt packs the
 most. See "How the algorithm works" below for the full walkthrough.
+
+Last of all, once every packing decision is made, `Packer` hands each
+finished box to `GravitySettler`. Gravity acts along -Z (see "Coordinate
+system and gravity" below): every item drops straight down onto the
+floor or the item beneath it, and `ItemReseater` then moves any item left
+with the centre of its base over thin air to a seat in the same box where
+it stands firmly. This only rearranges a box's own items, so box count,
+weights and box groups are untouched.
 
 ### 4. The library boundary: how anything outside `src/` calls this
 
@@ -522,6 +541,33 @@ Response (`fitsolver.solve()` / `.to_json()` / `.to_dict()`):
 `placements` is a flat list across all boxes (handy if you just want
 "where did everything end up" without walking the `boxes` tree).
 
+#### Coordinate system and gravity
+
+Every position is in its box's own frame, in the request's units:
+
+| Axis | Runs along the box's | Direction |
+|------|----------------------|-----------|
+| `x`  | `Width`              | left to right |
+| `y`  | `Length`             | back to front |
+| `z`  | `Depth`              | **bottom to top** |
+
+- The origin is the box's bottom-left-back corner. An item's `x`, `y`,
+  `z` are its minimum corner, and it extends `width`, `length`, `depth`
+  (its placed size, after any rotation) from there.
+- **Gravity acts along -Z.** A box's floor is its `Width` x `Length` face
+  at `z = 0`, and `Depth` is its height. A placed item's `depth` is how
+  tall it stands. (`KeepFlat` rotation means "keep `Depth` vertical".)
+- Every placed item rests on something: `z` is 0, or its underside meets
+  the top of another item in the same box.
+- A box's `items` are listed bottom-up (by `z`, then `y`, then `x`), a
+  sequence a packer can follow.
+
+Anything that draws a result has to put `z` on its vertical axis. In a
+Y-up renderer such as three.js that means position `(x, z, y)` and size
+`(width, depth, length)`. Putting `y` (`Length`) on the vertical axis
+instead stands the box on its back wall, and items that are side by side
+on the floor then look as if they float above one another.
+
 ### How the algorithm works (and its limits)
 
 The engine is split into cooperating classes, each in its own file under
@@ -568,6 +614,18 @@ The engine is split into cooperating classes, each in its own file under
   width/length swapped, and every valid orientation of the single
   highest-priority item is tried as the starting placement -- keeping
   whichever full attempt packs the most, best utilisation breaking ties.
+- **`GravitySettler`** runs last, once on each box of the result. Layer
+  packing starts every layer at the previous layer's tallest point, and
+  void-filling places items wherever there is free space, so on their own
+  they can leave an item hanging above a shorter neighbour (BoxPacker's
+  results have the same gaps). `GravitySettler` drops every item straight
+  down until it rests on the floor or on another item. `ItemReseater`
+  then looks at any item that landed with the centre of its base over
+  thin air, and so would tip, and moves it to a seat in the same box
+  where it stands firmly: on the floor or on top of other items, turned
+  if its `AllowedRotation` allows. A move is kept only if the box ends up
+  with fewer such items. Neither step can change which box an item is in,
+  so box counts, weights and box groups are exactly as packed.
 
 This is a solid heuristic port, not an exhaustive/optimal packer --
 `tests/integration/packer_test.cpp` documents the behaviour it guarantees (no
@@ -700,6 +758,32 @@ dvdoug/boxpacker's Chaotic figures come from
 means "the whole group in one box", which no box here can hold, so a
 single pass can't place either group; packed the way the reference was
 (ungrouped items with FOOD, then CORROSIVE alone) it reaches 62.
+
+### Benchmark: nothing floats
+
+`benchmarks/gravity_check/check_support.py` solves every order of the
+1000-order benchmark through the built library and checks each placed
+item against the items around it (in Python, separately from the
+engine's own `Support.cpp`). An item is *floating* when it is off the
+floor and nothing meets its underside, and *overhanging* when it rests on
+something but the centre of its base has nothing under it.
+
+| 1000 orders, 59,936 items placed in 12,598 boxes | Before `GravitySettler` | With it |
+|--------------------------------------------------|------------------------:|--------:|
+| Floating items                                   |      about 1,360 (2.3%) |       0 |
+| Overhanging items                                |        about 610 (1.0%) | 273 (0.5%) |
+| Boxes with every item standing firmly            |                   92.2% |   98.4% |
+| Orders with every item standing firmly           |                   60.8% |   86.9% |
+| Boxes used / units unplaced                      |            12,598 / 674 | 12,598 / 674 |
+
+The "before" counts move by a few items from run to run, because
+weight redistribution stops on a wall-clock deadline (see "Time
+complexity"). On the Thommeax scenarios, SemiRealistic went from 24
+floating items of 115 to none, and Chaotic from 1 floating and 2
+overhanging to 1 overhanging: a 990 mm pole in a Golf Bag Box that has no
+flat seat left for it. An item is left overhanging only when its box has
+no firm seat for it without moving other items; fixing those would mean
+choosing the lower layer's layout with the upper layer in mind.
 
 ### Extending it
 

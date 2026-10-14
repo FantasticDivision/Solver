@@ -49,7 +49,7 @@ filter can be used for local investigation; CI intentionally runs the full suite
 
 ## Coverage reference
 
-This document describes the 79 GoogleTest cases registered in `fitsolver_tests`.
+This document describes 95 of the GoogleTest cases registered in `fitsolver_tests`.
 The diagrams show how the tests divide the solver into layers; the tables explain
 the exact behavior checked by every test.
 
@@ -326,17 +326,51 @@ flowchart TB
 | `PackerRegression.OneDimensionTooLargeCannotBeHiddenByEqualVolume` | Matching overall volume is insufficient when a nonrotatable dimension exceeds the box. |
 | `PackerPropertyTest.RandomRequestsPreserveAccountingBoundsAndWeight` | Across 200 seeded random requests, every item is accounted for once, placements remain in bounds and nonoverlapping, and box weights stay legal. |
 
+## 7. Gravity: what holds a packed item up (16 tests)
+
+Gravity acts along -Z: `z = 0` is the box floor and `Depth` is vertical. `Packer` runs
+`GravitySettler` on every finished box, so nothing in a response floats. The three
+`ThommeaxBenchmark` tests also assert this on the client's scenarios, with a check written
+out in the test file itself rather than borrowed from the engine.
+
+```mermaid
+flowchart LR
+    BOX["Finished box"] --> DROP["DropOntoSupport: every item comes down onto the floor or an item"]
+    DROP --> SEAT["ItemReseater: an item that would tip moves to a firm seat"]
+    SEAT --> LIST["Relisted bottom-up"]
+```
+
+| Test | What it verifies |
+|---|---|
+| `SupportTest.FootprintsThatOnlyShareAnEdgeDoNotOverlap` | Neighbours standing side by side share no floor area; height plays no part in a footprint. |
+| `SupportTest.RestingHeightIsTheTallestTopUnderTheFootprint` | An item lowered from above lands on the tallest item under it, or the floor, and never on itself. |
+| `SupportTest.AnItemOnTheFloorStandsFirmly` | An item at `z = 0` always stands firmly. |
+| `SupportTest.AFloatingItemDoesNotStandFirmly` | An item with a gap beneath it is counted as not standing firmly. |
+| `SupportTest.AnItemStandsFirmlyOnlyWithItsCentreOverItsSupport` | A ledge under one end leaves an item tipping; the same ledge under its middle holds it. |
+| `SupportTest.AnItemBridgingTwoSupportsStandsFirmly` | An item resting on a support at each end is firm although nothing is under its centre. |
+| `DropOntoSupportTest.ClosesTheGapUnderAFloatingItem` | A floating item comes down onto the item beneath it. |
+| `DropOntoSupportTest.AStackComesDownTogether` | When a middle item drops, the item resting on it drops with it, whatever order they are listed in. |
+| `DropOntoSupportTest.LandsOnTheTallestItemBeneath` | An item across two items of different height lands on the taller one. |
+| `DropOntoSupportTest.ChangesNothingButHeightAndLeavesRestingItemsAlone` | Only `z` changes, never upwards, and items already resting stay where they are. |
+| `ItemReseaterTest.MovesAnOverhangingItemToASeatWhereItStandsFirmly` | An item hanging off a ledge is moved flat onto the lower item beside it; nothing else moves. |
+| `ItemReseaterTest.LeavesAnItemWhereItIsWhenTheBoxHasNoFirmSeatForIt` | With nowhere firm to go, the item stays put. |
+| `ItemReseaterTest.TurnsAnItemToReachASeatOnlyIfItsRotationAllows` | A `KeepFlat` item is turned a quarter-turn to reach a firm seat; a `Never` item is left as it is. |
+| `ItemReseaterTest.NeverLeavesABoxWorseOffOnRandomLayouts` | Across 200 seeded random stacks, nothing floats after the drop, and after re-seating nothing floats, overlaps or leaves the box and no more items are left tipping than before. |
+| `GravitySettlerTest.SettlesTheLayoutTheChaoticGolfBagBoxUsedToComeBackWith` | The Chaotic order's Golf Bag Box as it used to be returned (one pole 40 above the pole beneath it) comes back with nothing floating, within the box, listed bottom-up. |
+| `GravitySettlerTest.LeavesABoxThatIsAlreadySettledExactlyAsItWas` | A box with nothing to fix is returned unchanged. |
+
 ## Test count summary
 
 ```mermaid
 pie showData
-    title Tests by documentation section (79 total)
+    title Tests by documentation section (95 total)
     "Basic class tests" : 18
     "Rotation and void geometry" : 22
     "End-to-end Packer" : 12
     "Detailed model and lists" : 13
     "Packed and request details" : 8
     "Algorithms and properties" : 6
+    "Gravity" : 16
 ```
 
 Run the documented suite with:

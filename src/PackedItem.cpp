@@ -1,8 +1,15 @@
 #include "PackedItem.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include "LinkedItem.h"
 
 namespace fitsolver {
+
+namespace {
+constexpr double kOrderEps = 1e-6;
+}  // namespace
 
 PackedItem::PackedItem(OrientatedItem orientation, double x, double y, double z)
     : orientation_(std::move(orientation)), x_(x), y_(y), z_(z) {}
@@ -34,6 +41,14 @@ nlohmann::json PackedItem::ToJson() const {
     j["box_group"] = nullptr;
   }
   return j;
+}
+
+void SortBottomUp(std::vector<PackedItem>& items) {
+  std::stable_sort(items.begin(), items.end(), [](const PackedItem& a, const PackedItem& b) {
+    if (std::abs(a.GetZ() - b.GetZ()) > kOrderEps) return a.GetZ() < b.GetZ();
+    if (std::abs(a.GetY() - b.GetY()) > kOrderEps) return a.GetY() < b.GetY();
+    return a.GetX() < b.GetX();
+  });
 }
 
 }  // namespace fitsolver

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -19,6 +20,11 @@ class PackedBoxList {
       std::shared_ptr<const PackedBoxSorter> sorter = std::make_shared<DefaultPackedBoxSorter>());
 
   void Insert(PackedBox box);
+
+  // Replaces every box with `change(box)`. Meant for changes that leave
+  // what the sorter looks at alone (which items a box holds), so the boxes
+  // stay listed in exactly the order they were.
+  void Apply(const std::function<PackedBox(const PackedBox&)>& change);
 
   std::size_t Count() const { return boxes_.size(); }
   bool Empty() const { return boxes_.empty(); }

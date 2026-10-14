@@ -16,7 +16,10 @@ namespace fitsolver {
 // packing the ungrouped items alongside each group in turn (every other
 // group then packed on its own) and keeps whichever strategy places the
 // most items in the fewest boxes. If more than one box was used, runs
-// WeightRedistributor afterwards to even out weight between them.
+// WeightRedistributor afterwards to even out weight between them. Last of
+// all, GravitySettler lets every item in each finished box come to rest on
+// the floor or on another item, so nothing in a response floats (not part
+// of BoxPacker).
 //
 // Never throws for "doesn't fit" -- items that can't be placed in any
 // box end up in PackResponse::unplaced_items and `success` is false.

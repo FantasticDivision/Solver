@@ -12,6 +12,11 @@ void PackedBoxList::Insert(PackedBox box) {
   is_sorted_ = false;
 }
 
+void PackedBoxList::Apply(const std::function<PackedBox(const PackedBox&)>& change) {
+  for (auto& box : boxes_) box = change(box);
+  is_sorted_ = false;
+}
+
 void PackedBoxList::EnsureSorted() const {
   if (is_sorted_) return;
   sorted_cache_ = boxes_;
