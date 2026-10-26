@@ -54,6 +54,7 @@ set(FITSOLVER_CORE_SOURCES
   src/Support.cpp
   src/GravitySettler.cpp
   src/ItemReseater.cpp
+  src/StableRepacker.cpp
   src/OrientatedItemFactory.cpp
   src/OrientatedItemSorter.cpp
   src/LayerPacker.cpp

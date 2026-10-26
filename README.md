@@ -38,6 +38,7 @@ src/
   WeightRedistributor.h/.cpp   # Post-pass: evens out weight between boxes used
   Support.h/.cpp               # What a packed item rests on (gravity is -Z)
   ItemReseater.h/.cpp          # Moves an item that would tip to a firmer seat
+  StableRepacker.h/.cpp        # Lays a box out again so every item stands firmly
   GravitySettler.h/.cpp        # Post-pass: drops every item onto its support
   Packer.h/.cpp                # Top-level entry point: fitsolver::Packer().Pack(...)
   PackRequest.h/.cpp, PackResponse.h/.cpp  # Request/response + JSON (de)serialisation
@@ -265,10 +266,14 @@ classDiagram
     class ItemReseater {
         +Reseat(PackedItem[]) PackedItem[]
     }
+    class StableRepacker {
+        +Repack(PackedItem[]) PackedItem[]
+    }
     Packer ..> VolumePacker : tries each active box type via
     Packer ..> WeightRedistributor : rebalances weight via, after packing
     Packer ..> GravitySettler : settles every finished box via, last of all
     GravitySettler ..> ItemReseater : moves items that would tip via
+    GravitySettler ..> StableRepacker : lays the box out again via, if any still would
 
     class LayerPacker {
         +PackLayer(...) PackedLayer
@@ -348,8 +353,10 @@ finished box to `GravitySettler`. Gravity acts along -Z (see "Coordinate
 system and gravity" below): every item drops straight down onto the
 floor or the item beneath it, and `ItemReseater` then moves any item left
 with the centre of its base over thin air to a seat in the same box where
-it stands firmly. This only rearranges a box's own items, so box count,
-weights and box groups are untouched.
+it stands firmly. If one still would tip, `StableRepacker` lays the box's
+items out again from the floor up, each only where it stands firmly, and
+keeps that layout if every item found a place. This only rearranges a
+box's own items, so box count, weights and box groups are untouched.
 
 ### 4. The library boundary: how anything outside `src/` calls this
 
@@ -624,8 +631,16 @@ The engine is split into cooperating classes, each in its own file under
   thin air, and so would tip, and moves it to a seat in the same box
   where it stands firmly: on the floor or on top of other items, turned
   if its `AllowedRotation` allows. A move is kept only if the box ends up
-  with fewer such items. Neither step can change which box an item is in,
-  so box counts, weights and box groups are exactly as packed.
+  with fewer such items. Moving one item at a time can't help when a row
+  of items above a gap needs what is under it laid out differently, so if
+  any item would still tip, `StableRepacker` lays the box's items out
+  again from the floor up, putting each at the lowest spot where it stands
+  firmly. It tries a few fixed orders (as packed, biggest footprint first,
+  tallest first, and so on), then 64 seeded shuffles, and keeps the first
+  layout that places every item; if none does within its work budget, the
+  box stays as re-seating left it. None of these steps can change which
+  box an item is in, so box counts, weights and box groups are exactly as
+  packed.
 
 This is a solid heuristic port, not an exhaustive/optimal packer --
 `tests/integration/packer_test.cpp` documents the behaviour it guarantees (no
@@ -695,10 +710,19 @@ using (`m <= n`, but in practice `m` is small).
   over an already-complete, already-valid packing, so stopping partway
   through can only leave boxes somewhat less evenly loaded, never break
   correctness.
+- **`GravitySettler`** runs once on each of the `m` boxes. Dropping a box's
+  `k` items onto their supports is O(k²). `ItemReseater` and
+  `StableRepacker` are each capped by a budget of item comparisons per box
+  (2,000,000 and 4,000,000), counted in work rather than time for the same
+  reason as the group strategies, so together they add at most a constant
+  per box: O(m) on top. `StableRepacker` only runs on a box that still has
+  an item that would tip after re-seating: fewer than 2 boxes in every
+  100 on the 1000-order benchmark.
 - **Overall**: **O(m · b · n²)** worst case. The redistribution deadline
-  and the group-strategy work budget are what keep the extra phases from
-  adding anything unbounded on top of the core packing -- see the next
-  section for the measured numbers this produces in practice.
+  and the work budgets of the group strategies and the gravity steps are
+  what keep the extra phases from adding anything unbounded on top of the
+  core packing -- see the next section for the measured numbers this
+  produces in practice.
 
 ### Benchmark: solve time and box count vs. dvdoug/boxpacker
 
@@ -768,22 +792,22 @@ engine's own `Support.cpp`). An item is *floating* when it is off the
 floor and nothing meets its underside, and *overhanging* when it rests on
 something but the centre of its base has nothing under it.
 
-| 1000 orders, 59,936 items placed in 12,598 boxes | Before `GravitySettler` | With it |
-|--------------------------------------------------|------------------------:|--------:|
-| Floating items                                   |      about 1,360 (2.3%) |       0 |
-| Overhanging items                                |        about 610 (1.0%) | 273 (0.5%) |
-| Boxes with every item standing firmly            |                   92.2% |   98.4% |
-| Orders with every item standing firmly           |                   60.8% |   86.9% |
-| Boxes used / units unplaced                      |            12,598 / 674 | 12,598 / 674 |
+| 1000 orders, 59,936 items placed in 12,598 boxes | Before `GravitySettler` | Drop and re-seat (v0.8.0) | Also lay out again |
+|--------------------------------------------------|------------------------:|--------------------------:|-------------------:|
+| Floating items                                   |      about 1,360 (2.3%) |                         0 |                  0 |
+| Overhanging items                                |        about 610 (1.0%) |          about 275 (0.5%) | about 25 (under 0.1%) |
+| Boxes with every item standing firmly            |                   92.2% |                     98.4% |              99.9% |
+| Orders with every item standing firmly           |                   60.8% |                     86.9% |              98.7% |
+| Boxes used / units unplaced                      |            12,598 / 674 |              12,598 / 674 |       12,598 / 674 |
 
-The "before" counts move by a few items from run to run, because
-weight redistribution stops on a wall-clock deadline (see "Time
-complexity"). On the Thommeax scenarios, SemiRealistic went from 24
-floating items of 115 to none, and Chaotic from 1 floating and 2
-overhanging to 1 overhanging: a 990 mm pole in a Golf Bag Box that has no
-flat seat left for it. An item is left overhanging only when its box has
-no firm seat for it without moving other items; fixing those would mean
-choosing the lower layer's layout with the upper layer in mind.
+The counts move by a few items from run to run, because weight
+redistribution stops on a wall-clock deadline (see "Time complexity"). On
+the Thommeax scenarios, SemiRealistic went from 24 floating items of 115
+to none, and Chaotic from 1 floating and 2 overhanging to none: re-seating
+left one 990 mm pole in a Golf Bag Box with no flat seat, and laying that
+box out again stands all nine of its items firmly. An item is left
+overhanging only when neither re-seating it nor any layout
+`StableRepacker` tries stands every item in its box firmly.
 
 ### Extending it
 

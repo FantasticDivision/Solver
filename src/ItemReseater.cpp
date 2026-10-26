@@ -15,28 +15,6 @@ namespace {
 
 constexpr double kEps = 1e-6;
 
-// The ways `placed` may be turned: as it is now first, then every other
-// orientation its Rotation allows that either keeps it the same way up or
-// passes BoxPacker's own tall-and-thin check (OrientatedItem::IsStable).
-std::vector<OrientatedItem> Orientations(const PackedItem& placed) {
-  std::vector<OrientatedItem> result;
-  result.emplace_back(placed.GetItem(), placed.GetWidth(), placed.GetLength(), placed.GetDepth(),
-                      placed.GetOrientationCode());
-  for (auto& orientation : GenerateOrientations(placed.GetItem())) {
-    const bool same_way_up = orientation.GetDepth() == placed.GetDepth();
-    if (!same_way_up && !orientation.IsStable()) continue;
-
-    const bool duplicate =
-        std::any_of(result.begin(), result.end(), [&](const OrientatedItem& seen) {
-          return seen.GetWidth() == orientation.GetWidth() &&
-                 seen.GetLength() == orientation.GetLength() &&
-                 seen.GetDepth() == orientation.GetDepth();
-        });
-    if (!duplicate) result.push_back(std::move(orientation));
-  }
-  return result;
-}
-
 // Where a width x length footprint might sit: the box's corners, and for
 // every other item the corners and middle of its top and the spots flush
 // against its sides. A handful per item rather than every combination of
@@ -89,7 +67,7 @@ std::vector<std::pair<double, double>> Seats(const std::vector<PackedItem>& item
 std::optional<PackedItem> BestSeat(const std::vector<PackedItem>& items, std::size_t index,
                                    const Box& box, std::size_t& work, std::size_t max_work) {
   const PackedItem& current = items[index];
-  const std::vector<OrientatedItem> orientations = Orientations(current);
+  const std::vector<OrientatedItem> orientations = OrientationsForMoving(current);
 
   std::optional<PackedItem> best;
   std::tuple<double, std::size_t, double, double, double> best_rank;

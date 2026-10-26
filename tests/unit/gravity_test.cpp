@@ -1,5 +1,6 @@
 // Coverage for what holds a packed item up: Support's geometry,
-// ItemReseater, and GravitySettler, which Packer runs on every finished box.
+// ItemReseater, StableRepacker, and GravitySettler, which Packer runs on
+// every finished box.
 //
 // Gravity acts along -Z throughout: z = 0 is the box floor and Depth is the
 // vertical axis.
@@ -16,6 +17,7 @@
 #include "GravitySettler.h"
 #include "ItemReseater.h"
 #include "PackedBox.h"
+#include "StableRepacker.h"
 #include "Support.h"
 #include "test_helpers.h"
 
@@ -58,6 +60,65 @@ bool Floats(const PackedItem& item, const std::vector<PackedItem>& items) {
     if (beneath && shares_floor_area) return false;
   }
   return true;
+}
+
+// `after` holds the same items as `before`, each the same size (and the
+// same way round where its Rotation is Never), none of them floating,
+// overlapping another or poking out of a width x length x depth box.
+void ExpectSameItemsInsideTheBox(const std::vector<PackedItem>& before,
+                                 const std::vector<PackedItem>& after, double width,
+                                 double length, double depth) {
+  const auto was = ByCode(before);
+  ASSERT_EQ(after.size(), before.size());
+  ASSERT_EQ(ByCode(after).size(), after.size()) << "an item appears twice";
+  for (std::size_t i = 0; i < after.size(); ++i) {
+    const PackedItem& item = after[i];
+    const std::string& code = item.GetItem()->GetItemCode();
+    ASSERT_EQ(was.count(code), 1u) << code << " was not in the box";
+    const PackedItem& old = was.at(code);
+
+    std::vector<double> sides{item.GetWidth(), item.GetLength(), item.GetDepth()};
+    std::vector<double> old_sides{old.GetWidth(), old.GetLength(), old.GetDepth()};
+    if (item.GetItem()->GetAllowedRotation() != Rotation::kNever) {
+      std::sort(sides.begin(), sides.end());
+      std::sort(old_sides.begin(), old_sides.end());
+    }
+    EXPECT_EQ(sides, old_sides) << code;
+
+    EXPECT_FALSE(Floats(item, after)) << code << " is floating";
+    EXPECT_GE(item.GetX(), -1e-6) << code;
+    EXPECT_GE(item.GetY(), -1e-6) << code;
+    EXPECT_GE(item.GetZ(), -1e-6) << code;
+    EXPECT_LE(item.GetX() + item.GetWidth(), width + 1e-6) << code;
+    EXPECT_LE(item.GetY() + item.GetLength(), length + 1e-6) << code;
+    EXPECT_LE(item.GetZ() + item.GetDepth(), depth + 1e-6) << code;
+    for (std::size_t j = i + 1; j < after.size(); ++j) {
+      EXPECT_FALSE(Overlap(item, after[j])) << code << " overlaps " << after[j].GetItem()->GetItemCode();
+    }
+  }
+}
+
+// A random non-overlapping stack in a 100 x 100 x 400 box, each item
+// dropped in from above with a random gap left under it.
+std::vector<PackedItem> RandomStack(std::mt19937& random) {
+  const auto pick = [&random](int low, int high) {
+    return static_cast<double>(std::uniform_int_distribution<int>(low, high)(random));
+  };
+  std::vector<PackedItem> items;
+  const int count = static_cast<int>(pick(2, 8));
+  for (int n = 0; n < count; ++n) {
+    const double width = pick(10, 60);
+    const double length = pick(10, 60);
+    const double depth = pick(5, 30);
+    const double x = pick(0, 100 - static_cast<int>(width));
+    const double y = pick(0, 100 - static_cast<int>(length));
+    const bool leave_gap = pick(0, 1) > 0.5;
+    const double gap = leave_gap ? pick(1, 20) : 0.0;
+    const PackedItem probe = Placed("probe", width, length, depth, x, y, 0, Rotation::kBestFit);
+    const double z = fitsolver::RestingHeight(probe, items, fitsolver::kNoItem) + gap;
+    items.push_back(Placed("I" + std::to_string(n), width, length, depth, x, y, z, Rotation::kBestFit));
+  }
+  return items;
 }
 
 }  // namespace
@@ -229,26 +290,10 @@ class ItemReseaterRandomLayouts : public testing::TestWithParam<int> {};
 
 TEST_P(ItemReseaterRandomLayouts, NeverLeavesABoxWorseOff) {
   std::mt19937 random(20261014u + static_cast<unsigned>(GetParam()));
-  const auto pick = [&random](int low, int high) {
-    return static_cast<double>(std::uniform_int_distribution<int>(low, high)(random));
-  };
 
   for (int layout = 0; layout < 6; ++layout) {
     const auto box = MakeBox("BOX", 100, 100, 400);
-    std::vector<PackedItem> items;
-    const int count = static_cast<int>(pick(2, 8));
-    for (int n = 0; n < count; ++n) {
-      const double width = pick(10, 60);
-      const double length = pick(10, 60);
-      const double depth = pick(5, 30);
-      const double x = pick(0, 100 - static_cast<int>(width));
-      const double y = pick(0, 100 - static_cast<int>(length));
-      const bool leave_gap = pick(0, 1) > 0.5;
-      const double gap = leave_gap ? pick(1, 20) : 0.0;
-      const PackedItem probe = Placed("probe", width, length, depth, x, y, 0, Rotation::kBestFit);
-      const double z = fitsolver::RestingHeight(probe, items, fitsolver::kNoItem) + gap;
-      items.push_back(Placed("I" + std::to_string(n), width, length, depth, x, y, z, Rotation::kBestFit));
-    }
+    const std::vector<PackedItem> items = RandomStack(random);
 
     const auto dropped = fitsolver::DropOntoSupport(items);
     for (const auto& item : dropped) {
@@ -279,6 +324,89 @@ TEST_P(ItemReseaterRandomLayouts, NeverLeavesABoxWorseOff) {
 
 INSTANTIATE_TEST_SUITE_P(Seeds, ItemReseaterRandomLayouts, testing::Range(0, 25));
 
+TEST(StableRepackerTest, LaysTheBoxOutAgainWhenNoSingleMoveStandsAnItemFirmly) {
+  // LID spans the whole box, so it has one seat only: across BLOCK and the
+  // 2-lower STEP, where BLOCK alone holds it up with LID's centre 10 past
+  // BLOCK's edge. Laid out again with LID on the floor, all three stand
+  // firmly.
+  const auto box = MakeBox("BOX", 100, 50, 60);
+  const std::vector<PackedItem> items{Placed("BLOCK", 40, 50, 20, 0, 0, 0),
+                                      Placed("STEP", 60, 50, 18, 40, 0, 0),
+                                      Placed("LID", 100, 50, 10, 0, 0, 20)};
+  ASSERT_EQ(fitsolver::CountNotStandingFirmly(fitsolver::ItemReseater(box).Reseat(items)), 1u)
+      << "re-seating alone can't help here";
+
+  const auto layout = fitsolver::StableRepacker(box).Repack(items);
+  ASSERT_TRUE(layout.has_value());
+  EXPECT_EQ(fitsolver::CountNotStandingFirmly(*layout), 0u);
+  ExpectSameItemsInsideTheBox(items, *layout, 100, 50, 60);
+  EXPECT_DOUBLE_EQ(ByCode(*layout).at("LID").GetZ(), 0.0) << "LID should now lie on the floor";
+
+  const auto again = fitsolver::StableRepacker(box).Repack(items);
+  ASSERT_TRUE(again.has_value());
+  ASSERT_EQ(again->size(), layout->size());
+  for (std::size_t i = 0; i < layout->size(); ++i) {
+    EXPECT_EQ((*again)[i].GetItem()->GetItemCode(), (*layout)[i].GetItem()->GetItemCode());
+    EXPECT_DOUBLE_EQ((*again)[i].GetX(), (*layout)[i].GetX()) << "the same box must pack the same way";
+    EXPECT_DOUBLE_EQ((*again)[i].GetY(), (*layout)[i].GetY());
+    EXPECT_DOUBLE_EQ((*again)[i].GetZ(), (*layout)[i].GetZ());
+  }
+}
+
+TEST(GravitySettlerTest, KeepsTheReseatedLayoutWhenNoFirmLayoutIsFound) {
+  // No layout of these three stands all of them firmly. LONG and SHORT fill
+  // the box's length and SHELF its width, so SHELF must lie wholly above or
+  // below each of them, and the box is too shallow to stack LONG and SHORT.
+  // Under them, SHELF's 9 of their 20 can't hold either up. Over them, it
+  // rests on LONG alone, the taller, and LONG's 45 can't reach under
+  // SHELF's centre while SHORT's 55 fills the rest of the floor. As packed,
+  // SHELF rests on LONG alone and would tip, and the box must come back
+  // exactly so.
+  const auto box = MakeBox("BOX", 100, 20, 25);
+  const std::vector<PackedItem> items{Placed("LONG", 45, 20, 15, 0, 0, 0),
+                                      Placed("SHORT", 55, 20, 14, 45, 0, 0),
+                                      Placed("SHELF", 100, 9, 10, 0, 0, 15)};
+  ASSERT_EQ(fitsolver::CountNotStandingFirmly(items), 1u);
+  EXPECT_FALSE(fitsolver::StableRepacker(box).Repack(items).has_value());
+
+  fitsolver::PackedBox packed(box);
+  for (const auto& item : items) packed.AddItem(item);
+  const auto settled = ByCode(fitsolver::GravitySettler().Settle(packed).GetItems().ToVector());
+
+  ASSERT_EQ(settled.size(), items.size());
+  for (const auto& item : items) {
+    const PackedItem& after = settled.at(item.GetItem()->GetItemCode());
+    EXPECT_DOUBLE_EQ(after.GetX(), item.GetX()) << item.GetItem()->GetItemCode();
+    EXPECT_DOUBLE_EQ(after.GetY(), item.GetY()) << item.GetItem()->GetItemCode();
+    EXPECT_DOUBLE_EQ(after.GetZ(), item.GetZ()) << item.GetItem()->GetItemCode();
+  }
+}
+
+// The random stacks above, laid out again. Every layout StableRepacker
+// gives back must stand every item firmly, with nothing floating,
+// overlapping, leaving the box or changing size, so GravitySettler can
+// only ever leave a box better off than re-seating alone does.
+class StableRepackerRandomLayouts : public testing::TestWithParam<int> {};
+
+TEST_P(StableRepackerRandomLayouts, EveryLayoutItGivesBackStandsFirmly) {
+  std::mt19937 random(20261027u + static_cast<unsigned>(GetParam()));
+
+  int laid_out = 0;
+  for (int layout = 0; layout < 6; ++layout) {
+    const auto box = MakeBox("BOX", 100, 100, 400);
+    const auto items = fitsolver::DropOntoSupport(RandomStack(random));
+
+    const auto repacked = fitsolver::StableRepacker(box).Repack(items);
+    if (!repacked.has_value()) continue;
+    ++laid_out;
+    EXPECT_EQ(fitsolver::CountNotStandingFirmly(*repacked), 0u) << "layout " << layout;
+    ExpectSameItemsInsideTheBox(items, *repacked, 100, 100, 400);
+  }
+  EXPECT_GT(laid_out, 0) << "no stack was laid out again, so nothing was checked";
+}
+
+INSTANTIATE_TEST_SUITE_P(Seeds, StableRepackerRandomLayouts, testing::Range(0, 25));
+
 TEST(GravitySettlerTest, SettlesTheLayoutTheChaoticGolfBagBoxUsedToComeBackWith) {
   // Box 12 of the Thommeax Chaotic order as the engine returned it before
   // GravitySettler: the first layer is as deep as its bricks (110), so all
@@ -301,19 +429,15 @@ TEST(GravitySettlerTest, SettlesTheLayoutTheChaoticGolfBagBoxUsedToComeBackWith)
 
   const fitsolver::PackedBox settled = fitsolver::GravitySettler().Settle(packed);
   const auto& items = settled.GetItems().ToVector();
-  const auto by_code = ByCode(items);
 
   ASSERT_EQ(items.size(), 9u);
   EXPECT_EQ(settled.GetBox(), box);
-  for (const auto& item : items) {
-    EXPECT_FALSE(Floats(item, items)) << item.GetItem()->GetItemCode() << " is floating";
-    EXPECT_LE(item.GetZ() + item.GetDepth(), 200.0);
-  }
-  EXPECT_DOUBLE_EQ(by_code.at("POLE-2").GetZ(), 70.0) << "it should lie on the pole beneath it";
+  ExpectSameItemsInsideTheBox(packed.GetItems().ToVector(), items, 1000, 250, 200);
 
-  // One pole can be given a firm seat (along the rod in the back row);
-  // the box has none for the other, which stays on the bricks.
-  EXPECT_EQ(fitsolver::CountNotStandingFirmly(items), 1u);
+  // Re-seating gives one pole a firm seat but finds none for the other,
+  // which stays on the bricks; laying the box out again stands every item
+  // firmly.
+  EXPECT_EQ(fitsolver::CountNotStandingFirmly(items), 0u);
 
   // Relisted bottom-up, as a sequence a worker could follow.
   for (std::size_t i = 1; i < items.size(); ++i) {

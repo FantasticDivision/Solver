@@ -49,7 +49,7 @@ filter can be used for local investigation; CI intentionally runs the full suite
 
 ## Coverage reference
 
-This document describes 95 of the GoogleTest cases registered in `fitsolver_tests`.
+This document describes 98 of the GoogleTest cases registered in `fitsolver_tests`.
 The diagrams show how the tests divide the solver into layers; the tables explain
 the exact behavior checked by every test.
 
@@ -326,7 +326,7 @@ flowchart TB
 | `PackerRegression.OneDimensionTooLargeCannotBeHiddenByEqualVolume` | Matching overall volume is insufficient when a nonrotatable dimension exceeds the box. |
 | `PackerPropertyTest.RandomRequestsPreserveAccountingBoundsAndWeight` | Across 200 seeded random requests, every item is accounted for once, placements remain in bounds and nonoverlapping, and box weights stay legal. |
 
-## 7. Gravity: what holds a packed item up (16 tests)
+## 7. Gravity: what holds a packed item up (19 tests)
 
 Gravity acts along -Z: `z = 0` is the box floor and `Depth` is vertical. `Packer` runs
 `GravitySettler` on every finished box, so nothing in a response floats. The three
@@ -337,7 +337,8 @@ out in the test file itself rather than borrowed from the engine.
 flowchart LR
     BOX["Finished box"] --> DROP["DropOntoSupport: every item comes down onto the floor or an item"]
     DROP --> SEAT["ItemReseater: an item that would tip moves to a firm seat"]
-    SEAT --> LIST["Relisted bottom-up"]
+    SEAT --> REPACK["StableRepacker: if an item would still tip, the box is laid out again with every item firm"]
+    REPACK --> LIST["Relisted bottom-up"]
 ```
 
 | Test | What it verifies |
@@ -356,21 +357,24 @@ flowchart LR
 | `ItemReseaterTest.LeavesAnItemWhereItIsWhenTheBoxHasNoFirmSeatForIt` | With nowhere firm to go, the item stays put. |
 | `ItemReseaterTest.TurnsAnItemToReachASeatOnlyIfItsRotationAllows` | A `KeepFlat` item is turned a quarter-turn to reach a firm seat; a `Never` item is left as it is. |
 | `Seeds/ItemReseaterRandomLayouts.NeverLeavesABoxWorseOff/0` to `/24` | Across 150 seeded random stacks (25 seeds, 6 each), nothing floats after the drop, and after re-seating nothing floats, overlaps or leaves the box and no more items are left tipping than before. |
-| `GravitySettlerTest.SettlesTheLayoutTheChaoticGolfBagBoxUsedToComeBackWith` | The Chaotic order's Golf Bag Box as it used to be returned (one pole 40 above the pole beneath it) comes back with nothing floating, within the box, listed bottom-up. |
+| `StableRepackerTest.LaysTheBoxOutAgainWhenNoSingleMoveStandsAnItemFirmly` | A lid spanning a block and a slightly lower step has nowhere firm to move to; laid out again, the lid goes on the floor and all three items stand firmly, the same way on every run. |
+| `Seeds/GravitySettlerRandomLayouts.NeverLeavesABoxWorseOffThanReseatingAlone/0` to `/24` | Across 150 seeded random stacks (25 seeds, 6 each), the full settle never leaves more items tipping than re-seating alone, and nothing floats, overlaps, leaves the box or changes size. |
+| `GravitySettlerTest.SettlesTheLayoutTheChaoticGolfBagBoxUsedToComeBackWith` | The Chaotic order's Golf Bag Box as it used to be returned (one pole 40 above the pole beneath it) comes back with nothing floating or tipping, every item the same size and within the box, listed bottom-up. |
 | `GravitySettlerTest.LeavesABoxThatIsAlreadySettledExactlyAsItWas` | A box with nothing to fix is returned unchanged. |
+| `GravitySettlerTest.KeepsTheReseatedLayoutWhenNoFirmLayoutIsFound` | A box from the 1000-order benchmark that no layout `StableRepacker` tries stands fully firm comes back exactly as re-seating left it. |
 
 ## Test count summary
 
 ```mermaid
 pie showData
-    title Tests by documentation section (95 total)
+    title Tests by documentation section (98 total)
     "Basic class tests" : 18
     "Rotation and void geometry" : 22
     "End-to-end Packer" : 12
     "Detailed model and lists" : 13
     "Packed and request details" : 8
     "Algorithms and properties" : 6
-    "Gravity" : 16
+    "Gravity" : 19
 ```
 
 Run the documented suite with:

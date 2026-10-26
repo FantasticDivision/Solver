@@ -53,41 +53,58 @@ bool Contains(const std::vector<Point>& hull, const Point& point) {
   return true;
 }
 
+// Whether a width x length footprint with its corner at (x, y) shares floor
+// area with `other`.
+bool Overlaps(double x, double y, double width, double length, const PackedItem& other) {
+  return x + width > other.GetX() + kEps && other.GetX() + other.GetWidth() > x + kEps &&
+         y + length > other.GetY() + kEps && other.GetY() + other.GetLength() > y + kEps;
+}
+
 }  // namespace
 
 bool FootprintsOverlap(const PackedItem& a, const PackedItem& b) {
-  return a.GetX() + a.GetWidth() > b.GetX() + kEps && b.GetX() + b.GetWidth() > a.GetX() + kEps &&
-         a.GetY() + a.GetLength() > b.GetY() + kEps && b.GetY() + b.GetLength() > a.GetY() + kEps;
+  return Overlaps(a.GetX(), a.GetY(), a.GetWidth(), a.GetLength(), b);
 }
 
 double RestingHeight(const PackedItem& item, const std::vector<PackedItem>& items,
                      std::size_t skip) {
+  return RestingHeight(item.GetX(), item.GetY(), item.GetWidth(), item.GetLength(), items, skip);
+}
+
+double RestingHeight(double x, double y, double width, double length,
+                     const std::vector<PackedItem>& items, std::size_t skip) {
   double height = 0.0;
   for (std::size_t i = 0; i < items.size(); ++i) {
-    if (i == skip || !FootprintsOverlap(item, items[i])) continue;
+    if (i == skip || !Overlaps(x, y, width, length, items[i])) continue;
     height = std::max(height, items[i].GetZ() + items[i].GetDepth());
   }
   return height;
 }
 
 bool StandsFirmly(const PackedItem& item, const std::vector<PackedItem>& items, std::size_t skip) {
-  if (item.GetZ() <= kEps) return true;
+  return StandsFirmly(item.GetX(), item.GetY(), item.GetZ(), item.GetWidth(), item.GetLength(),
+                      items, skip);
+}
+
+bool StandsFirmly(double x, double y, double z, double width, double length,
+                  const std::vector<PackedItem>& items, std::size_t skip) {
+  if (z <= kEps) return true;
 
   std::vector<Point> contact;
   for (std::size_t i = 0; i < items.size(); ++i) {
     if (i == skip) continue;
     const PackedItem& other = items[i];
-    if (std::abs(other.GetZ() + other.GetDepth() - item.GetZ()) > kEps) continue;
-    if (!FootprintsOverlap(item, other)) continue;
+    if (std::abs(other.GetZ() + other.GetDepth() - z) > kEps) continue;
+    if (!Overlaps(x, y, width, length, other)) continue;
 
-    const double x0 = std::max(item.GetX(), other.GetX());
-    const double x1 = std::min(item.GetX() + item.GetWidth(), other.GetX() + other.GetWidth());
-    const double y0 = std::max(item.GetY(), other.GetY());
-    const double y1 = std::min(item.GetY() + item.GetLength(), other.GetY() + other.GetLength());
+    const double x0 = std::max(x, other.GetX());
+    const double x1 = std::min(x + width, other.GetX() + other.GetWidth());
+    const double y0 = std::max(y, other.GetY());
+    const double y1 = std::min(y + length, other.GetY() + other.GetLength());
     contact.insert(contact.end(), {{x0, y0}, {x1, y0}, {x1, y1}, {x0, y1}});
   }
 
-  const Point centre{item.GetX() + item.GetWidth() / 2.0, item.GetY() + item.GetLength() / 2.0};
+  const Point centre{x + width / 2.0, y + length / 2.0};
   return Contains(ConvexHull(std::move(contact)), centre);
 }
 
@@ -128,6 +145,25 @@ std::vector<PackedItem> DropOntoSupport(std::vector<PackedItem> items) {
     }
   }
   return items;
+}
+
+std::vector<OrientatedItem> OrientationsForMoving(const PackedItem& placed) {
+  std::vector<OrientatedItem> result;
+  result.emplace_back(placed.GetItem(), placed.GetWidth(), placed.GetLength(), placed.GetDepth(),
+                      placed.GetOrientationCode());
+  for (auto& orientation : GenerateOrientations(placed.GetItem())) {
+    const bool same_way_up = orientation.GetDepth() == placed.GetDepth();
+    if (!same_way_up && !orientation.IsStable()) continue;
+
+    const bool duplicate =
+        std::any_of(result.begin(), result.end(), [&](const OrientatedItem& seen) {
+          return seen.GetWidth() == orientation.GetWidth() &&
+                 seen.GetLength() == orientation.GetLength() &&
+                 seen.GetDepth() == orientation.GetDepth();
+        });
+    if (!duplicate) result.push_back(std::move(orientation));
+  }
+  return result;
 }
 
 }  // namespace fitsolver

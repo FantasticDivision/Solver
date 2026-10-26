@@ -14,12 +14,15 @@ namespace fitsolver {
 // void-filling places items wherever free space is, supported or not.
 // LayerStabiliser only reorders whole layers; it never closes those gaps.
 //
-// Settle() closes them in two steps:
+// Settle() closes them in up to three steps:
 //   1. every item drops straight down onto the floor or the item beneath
 //      it (DropOntoSupport), so nothing is left floating;
 //   2. an item that landed with the centre of its base over thin air is
 //      moved to a seat where it stands firmly, if the box has one
-//      (ItemReseater).
+//      (ItemReseater);
+//   3. if any item still doesn't stand firmly, the box's items are laid
+//      out again from the floor up, each only where it stands firmly, and
+//      that layout is kept if every item found a place (StableRepacker).
 // The items are then relisted bottom-up.
 //
 // It only rearranges a box's own items within that box, so it can never
