@@ -54,12 +54,12 @@ class SolutionCache {
   // Returns the cached response for exactly this (items, boxes) pair,
   // if present -- also promotes it to most-recently-used. std::nullopt
   // on a cache miss.
-  std::optional<PackResponse> Get(const ItemList& items, const BoxList& boxes);
+  std::optional<PackResponse> Get(const std::string key);
 
   // Stores `response` for this (items, boxes) pair, evicting the
   // least-recently-used entry first if already at capacity. Overwrites
   // (and promotes to most-recently-used) if the key is already present.
-  void Put(const ItemList& items, const BoxList& boxes, PackResponse response);
+  void Put(const std::string key, PackResponse response);
 
   std::size_t Count() const;
   void Clear();
@@ -83,7 +83,6 @@ class SolutionCache {
 // miss, run `packer.Pack(items, boxes)`, store the result, and return
 // it. This is the "easily recover a solved solution" entry point --
 // most callers only need this, not SolutionCache's methods directly.
-PackResponse PackCached(const Packer& packer, const ItemList& items, const BoxList& boxes,
-                         SolutionCache& cache);
+PackResponse PackCached(const Packer& packer, const ItemList& items, const BoxList& boxes, SolutionCache& cache);
 
 }  // namespace fitsolver

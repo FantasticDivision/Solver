@@ -41,10 +41,8 @@ std::string CanonicalCacheKey(const ItemList& items, const BoxList& boxes) {
 
 SolutionCache::SolutionCache(std::size_t capacity) : capacity_(capacity) {}
 
-std::optional<PackResponse> SolutionCache::Get(const ItemList& items, const BoxList& boxes) {
+std::optional<PackResponse> SolutionCache::Get(const std::string key) {
   if (capacity_ == 0) return std::nullopt;
-
-  const std::string key = BuildCanonicalKey(items, boxes);
   std::lock_guard<std::mutex> lock(mutex_);
 
   const auto it = entries_.find(key);
@@ -58,10 +56,9 @@ std::optional<PackResponse> SolutionCache::Get(const ItemList& items, const BoxL
   return it->second.response;
 }
 
-void SolutionCache::Put(const ItemList& items, const BoxList& boxes, PackResponse response) {
+void SolutionCache::Put(const std::string key, PackResponse response) {
   if (capacity_ == 0) return;
 
-  const std::string key = BuildCanonicalKey(items, boxes);
   std::lock_guard<std::mutex> lock(mutex_);
 
   const auto existing = entries_.find(key);
@@ -90,12 +87,12 @@ void SolutionCache::Clear() {
   recency_.clear();
 }
 
-PackResponse PackCached(const Packer& packer, const ItemList& items, const BoxList& boxes,
-                         SolutionCache& cache) {
-  if (auto cached = cache.Get(items, boxes)) return *cached;
+PackResponse PackCached(const Packer& packer, const ItemList& items, const BoxList& boxes, SolutionCache& cache) {
+  const std::string key = BuildCanonicalKey(items, boxes);
+  if (auto cached = cache.Get(key)) return *cached;
 
   PackResponse response = packer.Pack(items, boxes);
-  cache.Put(items, boxes, response);
+  cache.Put(key, response);
   return response;
 }
 

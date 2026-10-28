@@ -1,6 +1,6 @@
 [project]
 name = "fitsolver-client"
-version = "0.7.1"
+version = "0.9.1"
 description = "Minimal ctypes client for the FitSolver C ABI (fitsolver_lib)"
 readme = "README.md"
 requires-python = ">=3.9"
