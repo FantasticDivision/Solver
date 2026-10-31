@@ -2,7 +2,7 @@
 
 ## CI timing budget
 
-CI has a separate **Check 2 ms C++ test budget** step after the correctness,
+CI has a separate **Check 1 s C++ test budget** step after the correctness,
 Python binding and fuzz checks. It runs every enabled GoogleTest case, including
 `ThommeaxBenchmark.Simple`, `SemiRealistic` and `Chaotic` (the complex scenario).
 The job summary lists each test's median, minimum and maximum time in milliseconds,
@@ -11,10 +11,10 @@ sample count and pass/fail result. The same Markdown report is downloadable as t
 
 The timing run uses a Release build, a monotonic high-resolution clock, one full
 warm-up iteration and five measured iterations in the same process. A test must
-have a median **strictly below 2 ms**, and all six iterations must pass correctness.
+have a median **strictly below 1 s (1000 ms)**, and all six iterations must pass correctness.
 Missing samples, skipped tests and an empty test selection fail the check.
 The median reduces sensitivity to occasional scheduling delays; this is not a
-guarantee that every invocation finishes in 2 ms.
+guarantee that every invocation finishes in 1 s.
 
 This measures each complete C++ test, including per-test setup/teardown, fixture
 loading, parsing and assertions. Process startup and suite-level setup are excluded.

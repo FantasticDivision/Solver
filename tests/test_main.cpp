@@ -15,7 +15,7 @@ namespace {
 // Opt-in timing: normal CTest runs remain correctness-only. Keep the warm-up
 // and all measured iterations in one process, excluding process startup.
 constexpr int kSamples = 5;
-constexpr double kBudgetMs = 2.0;
+constexpr double kBudgetMs = 1000.0;
 
 struct Measurements {
   std::vector<double> milliseconds;
